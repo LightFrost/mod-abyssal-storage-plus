@@ -8,9 +8,12 @@ local FRAME_WIDTH = 520
 local FRAME_HEIGHT = 480
 local FRAME_PADDING = 16
 local SEARCH_HEIGHT = 24
+local SEARCH_WIDTH = 220
 local HEADER_HEIGHT = 32
 local SCROLL_WIDTH = 16
 local SCROLL_OUTSET = 19
+
+AbyssalStorageDB = AbyssalStorageDB or {}
 
 -- ============================================================================
 -- Sorted/Filtered Item List
@@ -74,6 +77,7 @@ end
 local frame = CreateFrame("Frame", "AbyssalStorageFrame", UIParent)
 frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
 frame:SetPoint("CENTER")
+frame:SetFrameStrata("MEDIUM")
 frame:SetMovable(true)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
@@ -99,18 +103,74 @@ tinsert(UISpecialFrames, "AbyssalStorageFrame")
 
 -- Title
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-title:SetPoint("TOP", frame, "TOP", 0, -6)
+local titleFont, titleHeight, titleFlags = GameFontHighlightLarge:GetFont()
+title:SetFont(titleFont, titleHeight + 2, titleFlags)
+title:SetShadowOffset(1, -1)
+title:SetPoint("TOP", frame, "TOP", 0, -9)
 title:SetText("Abyssal Storage")
 title:SetTextColor(1, 0.85, 0)
 
 -- Close button
 local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
+closeBtn:SetFrameStrata("MEDIUM")
+
+-- ============================================================================
+-- Search Bar
+-- ============================================================================
+
+local searchBox = CreateFrame("EditBox", "AbyssalStorageSearchBox", frame)
+searchBox:SetSize(SEARCH_WIDTH, SEARCH_HEIGHT)
+searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING + 52, -(HEADER_HEIGHT + 12))
+searchBox:SetFrameStrata("MEDIUM")
+searchBox:SetAutoFocus(false)
+searchBox:SetMaxLetters(64)
+searchBox:SetFontObject(GameFontHighlightSmall)
+searchBox:SetTextInsets(8, 8, 6, 6)
+searchBox:SetTextColor(0.9, 0.9, 0.9)
+searchBox:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    edgeSize = 1,
+})
+searchBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
+searchBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+searchBox:EnableMouse(true)
+searchBox:SetScript("OnMouseDown", function(self)
+    self:SetFocus()
+end)
+
+local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+searchPlaceholder:SetPoint("TOPLEFT", searchBox, "TOPLEFT", 8, -6)
+searchPlaceholder:SetText("Search items...")
+searchPlaceholder:SetTextColor(0.45, 0.45, 0.45)
+
+searchBox:SetScript("OnTextChanged", function(self)
+    searchFilter = self:GetText() or ""
+    if searchFilter == "" then
+        searchPlaceholder:Show()
+    else
+        searchPlaceholder:Hide()
+    end
+    AbyssalStorage:UpdateUI()
+end)
+searchBox:SetScript("OnEditFocusGained", function(self)
+    searchPlaceholder:Hide()
+end)
+searchBox:SetScript("OnEditFocusLost", function(self)
+    if (self:GetText() or "") == "" then
+        searchPlaceholder:Show()
+    end
+end)
+searchBox:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
 
 -- Deposit All button
 local depositBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-depositBtn:SetSize(80, 22)
-depositBtn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -4, -3)
+depositBtn:SetSize(90, SEARCH_HEIGHT)
+depositBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
+depositBtn:SetFrameStrata("MEDIUM")
 depositBtn:SetText("Deposit All")
 depositBtn:SetNormalTexture("Interface\\Buttons\\WHITE8X8")
 depositBtn:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
@@ -121,22 +181,6 @@ depositBtn:GetHighlightTexture():SetVertexColor(0.25, 0.25, 0.25, 0.9)
 depositBtn:GetFontString():SetTextColor(1, 0.85, 0)
 depositBtn:SetScript("OnClick", function()
     AbyssalStorage:Deposit()
-end)
-
--- ============================================================================
--- Search Bar
--- ============================================================================
-
-local searchBox = CreateFrame("EditBox", "AbyssalStorageSearchBox", frame, "InputBoxTemplate")
-searchBox:SetSize(FRAME_WIDTH - FRAME_PADDING * 2 - 52, SEARCH_HEIGHT)
-searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING + 52, -(HEADER_HEIGHT + 12))
-searchBox:SetAutoFocus(false)
-searchBox:SetScript("OnTextChanged", function(self)
-    searchFilter = self:GetText() or ""
-    AbyssalStorage:UpdateUI()
-end)
-searchBox:SetScript("OnEscapePressed", function(self)
-    self:ClearFocus()
 end)
 
 local searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -156,6 +200,7 @@ for index, categoryName in ipairs(CATEGORY_ORDER) do
     local categoryRow = math.floor(categoryIndex / 4)
     categoryButton:SetSize(categoryButtonWidth, categoryButtonHeight)
     categoryButton:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING + categoryColumn * (categoryButtonWidth + categoryButtonGap), -(HEADER_HEIGHT + 60 + categoryRow * (categoryButtonHeight + 4)))
+    categoryButton:SetFrameStrata("MEDIUM")
     categoryButton:SetText(categoryName)
     categoryButton:SetNormalTexture("Interface\\Buttons\\WHITE8X8")
     categoryButton:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
@@ -177,12 +222,14 @@ local gridTop = HEADER_HEIGHT + 128
 local gridArea = CreateFrame("Frame", nil, frame)
 gridArea:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -gridTop)
 gridArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + SCROLL_WIDTH), FRAME_PADDING)
+gridArea:SetFrameStrata("MEDIUM")
 
 -- Scroll bar (plain Slider, no template)
 local scrollBar = CreateFrame("Slider", "AbyssalStorageScrollBar", frame)
 scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, -(gridTop + 16))
 scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, FRAME_PADDING + 16)
 scrollBar:SetWidth(SCROLL_WIDTH)
+scrollBar:SetFrameStrata("MEDIUM")
 scrollBar:SetMinMaxValues(0, 0)
 scrollBar:SetValueStep(1)
 scrollBar:SetValue(0)
@@ -196,7 +243,7 @@ scrollBg:SetVertexColor(0, 0, 0, 0.3)
 local scrollThumb = scrollBar:CreateTexture(nil, "OVERLAY")
 scrollThumb:SetTexture("Interface\\Buttons\\WHITE8X8")
 scrollThumb:SetVertexColor(1, 0.85, 0, 0.75)
-scrollThumb:SetSize(SCROLL_WIDTH + 4, 24)
+scrollThumb:SetSize(SCROLL_WIDTH, 24)
 scrollBar:SetThumbTexture(scrollThumb)
 
 scrollBar:SetScript("OnValueChanged", function(self, value)
@@ -233,6 +280,7 @@ local function CreateCell(index)
     local cell = CreateFrame("Button", "AbyssalStorageCell" .. index, gridArea)
     cell:SetSize(CELL_SIZE, CELL_SIZE)
     cell:SetPoint("TOPLEFT", gridArea, "TOPLEFT", col * (CELL_SIZE + CELL_SPACING), -row * (CELL_SIZE + CELL_SPACING))
+    cell:SetFrameStrata("MEDIUM")
 
     -- Icon
     local iconTex = cell:CreateTexture(nil, "ARTWORK")
@@ -380,11 +428,16 @@ function AbyssalStorage:UpdateUI()
     if scrollBar:GetValue() > maxScroll then
         scrollBar:SetValue(maxScroll)
     end
+    if maxScroll > 0 then
+        scrollBar:Show()
+    else
+        scrollBar:Hide()
+    end
 
     -- Item count display
     if not frame.itemCountText then
-        frame.itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        frame.itemCountText:SetPoint("TOPRIGHT", searchBox, "BOTTOMRIGHT", 0, -2)
+        frame.itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
+        frame.itemCountText:SetPoint("LEFT", depositBtn, "RIGHT", 10, 0)
     end
     frame.itemCountText:SetText(#displayList .. " items")
 
@@ -627,3 +680,78 @@ AbyssalStorageFrame:SetScript("OnShow", function(self)
     end)
     AbyssalStorage:UpdateUI()
 end)
+
+-- ============================================================================
+-- Minimap Button
+-- ============================================================================
+
+local minimapButton = CreateFrame("Button", "AbyssalStorageMinimapButton", Minimap)
+minimapButton:SetSize(32, 32)
+minimapButton:SetFrameStrata("MEDIUM")
+minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 8)
+minimapButton:SetMovable(true)
+minimapButton:EnableMouse(true)
+minimapButton:RegisterForDrag("LeftButton")
+
+local minimapBg = minimapButton:CreateTexture(nil, "BACKGROUND")
+minimapBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+minimapBg:SetAllPoints()
+
+local minimapIcon = minimapButton:CreateTexture(nil, "ARTWORK")
+minimapIcon:SetTexture("Interface\\Icons\\INV_Enchant_VoidSphere")
+minimapIcon:SetSize(20, 20)
+minimapIcon:SetPoint("CENTER")
+minimapIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+local minimapBorder = minimapButton:CreateTexture(nil, "OVERLAY")
+minimapBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+minimapBorder:SetSize(54, 54)
+minimapBorder:SetPoint("TOPLEFT")
+
+local minimapHighlight = minimapButton:CreateTexture(nil, "HIGHLIGHT")
+minimapHighlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+minimapHighlight:SetBlendMode("ADD")
+minimapHighlight:SetAllPoints()
+
+local function UpdateMinimapButtonPosition()
+    local angle = math.rad(AbyssalStorageDB.minimapAngle or 220)
+    local radius = 80
+    minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+minimapButton:SetScript("OnDragStart", function(self)
+    self:SetScript("OnUpdate", function()
+        local mx, my = Minimap:GetCenter()
+        local scale = Minimap:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        cx, cy = cx / scale, cy / scale
+        AbyssalStorageDB.minimapAngle = math.deg(math.atan2(cy - my, cx - mx))
+        UpdateMinimapButtonPosition()
+    end)
+end)
+
+minimapButton:SetScript("OnDragStop", function(self)
+    self:SetScript("OnUpdate", nil)
+end)
+
+minimapButton:SetScript("OnClick", function()
+    if AbyssalStorageFrame:IsShown() then
+        AbyssalStorageFrame:Hide()
+    else
+        AbyssalStorageFrame:Show()
+        AbyssalStorage:UpdateUI()
+    end
+end)
+
+minimapButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("Abyssal Storage")
+    GameTooltip:AddLine("Click to open, drag to move", 0.8, 0.8, 0.8)
+    GameTooltip:Show()
+end)
+
+minimapButton:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+end)
+
+UpdateMinimapButtonPosition()

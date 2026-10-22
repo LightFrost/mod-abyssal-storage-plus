@@ -10,8 +10,16 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 - **Crafting integration**: Vault reagents appear in the TradeSkill UI and are materialized on demand when crafting
 - **Quest integration**: Quest-required items are pulled from the vault automatically on turn-in
 - **Multi-craft**: "Create All" uses vault materials across the full batch
-- **Grid UI**: Searchable item grid with tooltips, opened via `/abs` or right-clicking the backpack
+- **Grid UI**: Searchable item grid with tooltips.
 - **Real-time sync**: Vault state syncs on login and updates incrementally
+
+## Opening the Vault
+
+- Right-clicking the backpack icon
+- Click the minimap icon (drag it to reposition)
+- Type `/abs`
+- Press Open All Bags Keybind (default `Shift-B`); the vault opens alongside your bags
+
 
 ## Commands
 
