@@ -12,6 +12,7 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 - **Multi-craft**: "Create All" uses vault materials across the full batch
 - **Grid UI**: Searchable item grid with tooltips.
 - **Real-time sync**: Vault state syncs on login and updates incrementally
+- <kbd> **Tools protected**: Profession tools now excluded during deposit all e.g. enchanted rods, Gnomish Army Knife, Jeweler's Kit.
 
 ## Opening the Vault
 

@@ -169,6 +169,14 @@ bool AbyssalStorageMgr::ShouldAutoStore(Player* player, ItemTemplate const* item
     if (itemTemplate->Class != ITEM_CLASS_TRADE_GOODS && itemTemplate->Class != ITEM_CLASS_GEM)
         return false;
 
+    // Never auto-store profession tools (runed rods, kits, hammers)
+    if (itemTemplate->TotemCategory != 0)
+        return false;
+
+    // Jeweler's Kit has no TotemCategory in this database
+    if (itemTemplate->ItemId == 20815)
+        return false;
+
     if (IsItemRequiredByActiveQuest(player, itemTemplate->ItemId))
         return false;
 
