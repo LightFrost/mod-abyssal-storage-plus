@@ -469,8 +469,23 @@ end)
 -- TradeSkill Frame Hooks — Vault-aware recipe list and crafting
 -- ============================================================================
 
-local TRADE_SKILL_ROWS = 8
-local TRADE_SKILL_LINE_HEIGHT = 16
+local DEFAULT_TRADE_SKILL_ROWS = 8
+local DEFAULT_TRADE_SKILL_HEIGHT = 16
+
+local function GetTradeSkillDisplayedRows()
+    local rows = tonumber(TRADE_SKILLS_DISPLAYED)
+    if rows and rows > 0 then return math.floor(rows) end
+    rows = 0
+    while _G["TradeSkillSkill" .. (rows + 1)] do
+        rows = rows + 1
+    end
+    if rows > 0 then return rows end
+    return DEFAULT_TRADE_SKILL_ROWS
+end
+
+local function GetTradeSkillRowHeight()
+    return tonumber(TRADE_SKILL_HEIGHT) or DEFAULT_TRADE_SKILL_HEIGHT
+end
 
 local tradeCache = {
     valid = false,
@@ -756,7 +771,9 @@ end
 
 local function ApplyTradeScroll()
     if not TradeSkillListScrollFrame then return end
-    local maxOffset = math.max(0, #tradeCache.filtered - TRADE_SKILL_ROWS)
+    local rows = GetTradeSkillDisplayedRows()
+    local rowHeight = GetTradeSkillRowHeight()
+    local maxOffset = math.max(0, #tradeCache.filtered - rows)
     local offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
 
     if tradeResetScroll then
@@ -767,8 +784,8 @@ local function ApplyTradeScroll()
         if selectedVirtual then
             if selectedVirtual < offset + 1 then
                 offset = selectedVirtual - 1
-            elseif selectedVirtual > offset + TRADE_SKILL_ROWS then
-                offset = selectedVirtual - TRADE_SKILL_ROWS
+            elseif selectedVirtual > offset + rows then
+                offset = selectedVirtual - rows
             end
         end
         tradeScrollToSelected = false
@@ -779,8 +796,8 @@ local function ApplyTradeScroll()
 
     local scrollBar = _G["TradeSkillListScrollFrameScrollBar"]
     if scrollBar then
-        scrollBar:SetMinMaxValues(0, maxOffset * TRADE_SKILL_LINE_HEIGHT)
-        local value = offset * TRADE_SKILL_LINE_HEIGHT
+        scrollBar:SetMinMaxValues(0, maxOffset * rowHeight)
+        local value = offset * rowHeight
         if math.abs(scrollBar:GetValue() - value) > 0.01 then
             scrollBar:SetValue(value)
         end
@@ -792,7 +809,7 @@ local function CacheVisibleCounts()
     if TradeSkillListScrollFrame and FauxScrollFrame_GetOffset then
         offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
     end
-    for i = 1, TRADE_SKILL_ROWS do
+    for i = 1, GetTradeSkillDisplayedRows() do
         local realIndex = tradeCache.filtered[i + offset]
         if realIndex then GetRecipeCounts(realIndex) end
     end
@@ -924,7 +941,7 @@ local function UpdateTradeSkillInternal()
     end
 
     local offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
-    for i = 1, TRADE_SKILL_ROWS do
+    for i = 1, GetTradeSkillDisplayedRows() do
         local button = _G["TradeSkillSkill" .. i]
         local realIndex = tradeCache.filtered[i + offset]
         if button and realIndex then
