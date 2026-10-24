@@ -750,7 +750,33 @@ public:
         }
 
         // Cast once — OnSpellCast will chain the remaining crafts
-        player->CastSpell(player, spellId, false);
+        SpellCastResult castResult = player->CastSpell(player, spellId, false);
+        if (castResult != SPELL_CAST_OK)
+        {
+            // Return withdrawn reagents if the cast is rejected
+            if (data)
+            {
+                data->isMaterializing = true;
+                for (uint32 guid : data->materializedItems)
+                {
+                    Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
+                    if (item)
+                    {
+                        uint32 entry = item->GetEntry();
+                        uint32 count = item->GetCount();
+                        player->DestroyItemCount(entry, count, true);
+                        sAbyssalStorageMgr->DepositItem(accountId, entry, count);
+                        sAbyssalStorageMgr->SendItemUpdate(player, entry, sAbyssalStorageMgr->GetItemCount(accountId, entry));
+                    }
+                }
+                data->materializedItems.clear();
+                data->isMaterializing = false;
+                data->pendingCrafts = 0;
+                data->pendingSpellId = 0;
+                data->autoStoreEnabled = true;
+            }
+            handler->SendSysMessage("Abyssal Storage: Recipe could not be cast; materials returned.");
+        }
 
         return true;
     }

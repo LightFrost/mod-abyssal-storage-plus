@@ -1,6 +1,7 @@
 -- Abyssal Storage - Core Logic
 AbyssalStorage = AbyssalStorage or {}
 AbyssalStorage.items = {} -- { [itemEntry] = count }
+AbyssalStorage.vaultVersion = 0
 AbyssalStorage.PREFIX = "ABYS"
 
 -- ============================================================================
@@ -20,8 +21,11 @@ timerFrame:SetScript("OnUpdate", function(self, elapsed)
         local t = activeTimers[i]
         t.remaining = t.remaining - elapsed
         if t.remaining <= 0 then
-            t.callback()
             table.remove(activeTimers, i)
+            local ok, err = pcall(t.callback)
+            if not ok then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage timer error: " .. tostring(err) .. "|r")
+            end
         else
             i = i + 1
         end
@@ -100,6 +104,7 @@ end
 function AbyssalStorage:HandleSync(payload)
     if not payload or payload == "" then
         self.items = {}
+        self.vaultVersion = self.vaultVersion + 1
         if self.UpdateUI then self:UpdateUI() end
         return
     end
@@ -109,6 +114,7 @@ function AbyssalStorage:HandleSync(payload)
     -- We track sync state: first SYNC clears, subsequent ones merge
     if not self._syncActive then
         self.items = {}
+        self.vaultVersion = self.vaultVersion + 1
         self._syncActive = true
     end
 
@@ -116,6 +122,7 @@ function AbyssalStorage:HandleSync(payload)
         local entry, count = pair:match("(%d+),(%d+)")
         if entry and count then
             self.items[tonumber(entry)] = tonumber(count)
+            self.vaultVersion = self.vaultVersion + 1
         end
     end
 
@@ -138,6 +145,7 @@ function AbyssalStorage:HandleUpdate(payload)
         else
             self.items[entry] = nil
         end
+        self.vaultVersion = self.vaultVersion + 1
         -- Skip UI refresh during multi-packet SYNC to avoid flashing incomplete data
         if not self._syncActive and self.UpdateUI then self:UpdateUI() end
     end
@@ -148,6 +156,7 @@ function AbyssalStorage:HandleDelete(payload)
     local entry = tonumber(payload)
     if entry then
         self.items[entry] = nil
+        self.vaultVersion = self.vaultVersion + 1
         if not self._syncActive and self.UpdateUI then self:UpdateUI() end
     end
 end

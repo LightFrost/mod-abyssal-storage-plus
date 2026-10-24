@@ -7,12 +7,13 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 ## Features
 
 - **Auto-deposit**: Trade goods are automatically vaulted when picked up
-- **Crafting integration**: Vault reagents appear in the TradeSkill UI and are materialized on demand when crafting
+- **Crafting integration**: Recipe counts and reagent totals include vault stock, and missing reagents are pulled on demand when crafting
+- **Vault-aware filtering**: The "Have Materials" checkbox shows recipes craftable from bags plus vault
 - **Quest integration**: Quest-required items are pulled from the vault automatically on turn-in
 - **Multi-craft**: "Create All" uses vault materials across the full batch
 - **Grid UI**: Searchable item grid with tooltips.
 - **Real-time sync**: Vault state syncs on login and updates incrementally
-- <kbd> **Tools protected**: Profession tools now excluded during deposit all e.g. enchanted rods, Gnomish Army Knife, Jeweler's Kit.
+- **Tools protected**: Profession tools are excluded from Deposit All (enchanted rods, Gnomish Army Knife, Jeweler's Kit).
 
 ## Opening the Vault
 

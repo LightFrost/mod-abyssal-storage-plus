@@ -34,8 +34,7 @@ local CATEGORY_ORDER = {
     "Other",
 }
 
-local function GetItemCategory(entry)
-    local _, _, _, _, _, itemType, itemSubType = GetItemInfo(entry)
+local function GetItemCategory(itemType, itemSubType)
     if itemType ~= "Trade Goods" then
         return "Other"
     end
@@ -53,8 +52,8 @@ end
 local function BuildDisplayList()
     wipe(displayList)
     for entry, count in pairs(AbyssalStorage.items) do
-        local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(entry)
-        local category = GetItemCategory(entry)
+        local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
+        local category = GetItemCategory(itemType, itemSubType)
         local categoryMatches = selectedCategory == "All" or category == selectedCategory
         if name then
             if categoryMatches and (searchFilter == "" or name:lower():find(searchFilter:lower(), 1, true)) then
@@ -410,6 +409,9 @@ function AbyssalStorage:UpdateGrid()
 end
 
 function AbyssalStorage:UpdateUI()
+    if AbyssalStorage.RefreshTradeSkill then
+        AbyssalStorage:RefreshTradeSkill()
+    end
     if not AbyssalStorageFrame:IsShown() then return end
 
     BuildDisplayList()
@@ -464,205 +466,689 @@ hookFrame:SetScript("OnEvent", function(self, event)
 end)
 
 -- ============================================================================
--- TradeSkill Frame Hooks — Show vault reagents, enable Create button
+-- TradeSkill Frame Hooks — Vault-aware recipe list and crafting
 -- ============================================================================
 
--- Check if a recipe needs vault materials (player inventory alone is insufficient)
-local function NeedsVaultMaterials(id)
-    local numReagents = GetTradeSkillNumReagents(id)
-    for i = 1, numReagents do
-        local _, _, reagentCount, playerReagentCount = GetTradeSkillReagentInfo(id, i)
-        if playerReagentCount < reagentCount then
-            return true
-        end
-    end
-    return false
+local TRADE_SKILL_ROWS = 8
+local TRADE_SKILL_LINE_HEIGHT = 16
+
+local tradeCache = {
+    valid = false,
+    version = -1,
+    active = false,
+    linked = false,
+    nativeNum = 0,
+    filtered = {},
+    virtualByReal = {},
+    counts = {},
+    skillLine = nil,
+    selectedVirtual = 0,
+}
+
+local customRequested = false
+local customActive = false
+local customUpdating = false
+local lastLinked = nil
+local tradeResetScroll = false
+local tradeScrollToSelected = false
+local lastTradeVaultVersion = -1
+local tradeRefreshFrame
+local tradeEmptyText
+local tradeSkillHooked = false
+local tradeDisabled = false
+local tradeErrorReported = false
+
+local origTradeSkillUpdate
+local origTradeSkillEvent
+local origOnlyShowMakeable
+local origGetNumTradeSkills
+local origGetTradeSkillInfo
+local origGetTradeSkillSelectionIndex
+local origGetTradeSkillReagentInfo
+local origGetTradeSkillReagentItemLink
+local origGetTradeSkillNumReagents
+local origGetTradeSkillRecipeLink
+local origDoTradeSkill
+local origGetFirstTradeSkill
+
+local reagentItemIds = {}
+local reagentItemRetry = {}
+
+local function InvalidateTradeCache()
+    tradeCache.valid = false
 end
 
--- Get the spell ID for a tradeskill recipe index
+local function GetVaultCountForReagent(reagentName, realIndex, reagentIndex)
+    if not reagentName then return 0 end
+    local entry = reagentItemIds[reagentName]
+    if entry == nil then
+        local now = GetTime()
+        if (reagentItemRetry[reagentName] or 0) > now then return 0 end
+        reagentItemRetry[reagentName] = now + 1
+        if not origGetTradeSkillReagentItemLink or not realIndex or not reagentIndex then return 0 end
+        local link = origGetTradeSkillReagentItemLink(realIndex, reagentIndex)
+        entry = AbyssalStorage:EntryFromLink(link)
+        if not entry then return 0 end
+        reagentItemIds[reagentName] = entry
+    end
+    return AbyssalStorage.items[entry] or 0
+end
+
+local function ReportTradeError(err)
+    tradeDisabled = true
+    if tradeErrorReported then return end
+    tradeErrorReported = true
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage trade hook error: " .. tostring(err) .. " (vault features disabled; /reload to retry)|r")
+end
+
+local function GetRecipeCounts(realIndex)
+    local name, skillType = origGetTradeSkillInfo(realIndex)
+    if not name or skillType == "header" then return 0, 0 end
+    local cached = tradeCache.counts[name]
+    if cached then return cached.bag, cached.total end
+
+    local bagMax = math.huge
+    local totalMax = math.huge
+    local numReagents = origGetTradeSkillNumReagents(realIndex) or 0
+    for i = 1, numReagents do
+        local reagentName, _, need, have = origGetTradeSkillReagentInfo(realIndex, i)
+        if need and need > 0 and have then
+            local vault = GetVaultCountForReagent(reagentName, realIndex, i)
+            bagMax = math.min(bagMax, math.floor(have / need))
+            totalMax = math.min(totalMax, math.floor((have + vault) / need))
+        end
+    end
+    if bagMax == math.huge then
+        local _, _, nativeAvailable = origGetTradeSkillInfo(realIndex)
+        bagMax = tonumber(nativeAvailable) or 0
+        totalMax = bagMax
+    end
+    tradeCache.counts[name] = { bag = bagMax, total = totalMax }
+    return bagMax, totalMax
+end
+
+local function AddTradeEntry(realIndex)
+    local virtualIndex = #tradeCache.filtered + 1
+    tradeCache.filtered[virtualIndex] = realIndex
+    tradeCache.virtualByReal[realIndex] = virtualIndex
+end
+
+local function EnsureTradeCache()
+    local linked = IsTradeSkillLinked() and true or false
+    local version = tonumber(AbyssalStorage.vaultVersion) or 0
+    local nativeNum = tonumber(origGetNumTradeSkills()) or 0
+    local lineName = GetTradeSkillLine()
+    if tradeCache.version ~= version or tradeCache.skillLine ~= lineName then
+        wipe(tradeCache.counts)
+    end
+    if tradeCache.valid and tradeCache.nativeNum ~= nativeNum then
+        tradeCache.valid = false
+    end
+    if tradeCache.valid
+        and tradeCache.version == version
+        and tradeCache.active == customActive
+        and tradeCache.linked == linked then
+        return
+    end
+
+    wipe(tradeCache.filtered)
+    wipe(tradeCache.virtualByReal)
+    tradeCache.nativeNum = nativeNum
+    tradeCache.version = version
+    tradeCache.active = customActive
+    tradeCache.linked = linked
+    tradeCache.skillLine = lineName
+
+    local i = 1
+    while i <= tradeCache.nativeNum do
+        local _, skillType, _, isExpanded = origGetTradeSkillInfo(i)
+        if skillType == "header" then
+            local header = i
+            local childStart = i + 1
+            local nextIndex = childStart
+            local craftable = false
+            while nextIndex <= tradeCache.nativeNum do
+                local _, childType = origGetTradeSkillInfo(nextIndex)
+                if not childType or childType == "header" then break end
+                if customActive and isExpanded then
+                    local _, totalMax = GetRecipeCounts(nextIndex)
+                    if totalMax > 0 then craftable = true end
+                end
+                nextIndex = nextIndex + 1
+            end
+            local addHeader = not customActive or not isExpanded or craftable
+            local addChildren = isExpanded and (not customActive or craftable)
+            if addHeader then
+                AddTradeEntry(header)
+                if addChildren then
+                    for childIndex = childStart, nextIndex - 1 do
+                        if not customActive then
+                            AddTradeEntry(childIndex)
+                        else
+                            local _, totalMax = GetRecipeCounts(childIndex)
+                            if totalMax > 0 then AddTradeEntry(childIndex) end
+                        end
+                    end
+                end
+            end
+            i = nextIndex
+        else
+            if not customActive then
+                AddTradeEntry(i)
+            else
+                local _, totalMax = GetRecipeCounts(i)
+                if totalMax > 0 then AddTradeEntry(i) end
+            end
+            i = i + 1
+        end
+    end
+    tradeCache.valid = true
+end
+
+local function VirtualGetTradeSkillInfo(virtualIndex)
+    local realIndex = tradeCache.filtered[virtualIndex]
+    if not realIndex then return nil end
+    local name, skillType, numAvailable, isExpanded, serviceType = origGetTradeSkillInfo(realIndex)
+    numAvailable = tonumber(numAvailable) or 0
+    if name and skillType == "header" then
+        numAvailable = 0
+    elseif name then
+        local counts = tradeCache.counts[name]
+        if counts and counts.total > numAvailable then
+            numAvailable = counts.total
+        end
+    end
+    return name, skillType, numAvailable, isExpanded, serviceType
+end
+
+local function PostTradeSelection(id, force)
+    if tradeDisabled or IsTradeSkillLinked() then return end
+    if customUpdating and not force then return end
+    if not id or id <= 0 then return end
+    if not TradeSkillFrame or not TradeSkillFrame:IsShown() then return end
+    local name, skillType = origGetTradeSkillInfo(id)
+    if not name or skillType == "header" then return end
+    local numReagents = origGetTradeSkillNumReagents(id) or 0
+    if numReagents <= 0 then return end
+
+    local creatable = true
+    for i = 1, numReagents do
+        local reagentName, _, need, have = origGetTradeSkillReagentInfo(id, i)
+        if reagentName and need then
+            local total = (tonumber(have) or 0) + GetVaultCountForReagent(reagentName, id, i)
+            local reagent = _G["TradeSkillReagent"..i]
+            local nameText = _G["TradeSkillReagent"..i.."Name"]
+            local countText = _G["TradeSkillReagent"..i.."Count"]
+            if total < need then
+                creatable = false
+                if reagent then SetItemButtonTextureVertexColor(reagent, 0.5, 0.5, 0.5) end
+                if nameText then nameText:SetTextColor(GRAY_FONT_COLOR.r, GRAY_FONT_COLOR.g, GRAY_FONT_COLOR.b) end
+            else
+                if reagent then SetItemButtonTextureVertexColor(reagent, 1.0, 1.0, 1.0) end
+                if nameText then nameText:SetTextColor(HIGHLIGHT_FONT_COLOR.r, HIGHLIGHT_FONT_COLOR.g, HIGHLIGHT_FONT_COLOR.b) end
+            end
+            if countText then
+                local shown = total
+                if shown >= 100 then shown = "*" end
+                countText:SetText(shown.." /"..need)
+            end
+        end
+    end
+
+    if TradeSkillCreateButton then
+        if creatable then TradeSkillCreateButton:Enable() else TradeSkillCreateButton:Disable() end
+    end
+    if TradeSkillCreateAllButton then
+        if creatable then TradeSkillCreateAllButton:Enable() else TradeSkillCreateAllButton:Disable() end
+    end
+end
+
 local function GetTradeSkillSpellId(id)
-    local link = GetTradeSkillRecipeLink(id)
+    local link = origGetTradeSkillRecipeLink(id)
     if link then
-        local spellId = link:match("enchant:(%d+)")
-        if spellId then return tonumber(spellId) end
+        return tonumber(link:match("enchant:(%d+)") or link:match("spell:(%d+)"))
     end
     return nil
 end
 
--- Compute how many times a recipe can be crafted with inventory + vault
-local function GetMaxCraftsWithVault(id)
-    local numReagents = GetTradeSkillNumReagents(id)
-    local maxCrafts = math.huge
-    local canCraftWithVault = true
+local function WrappedDoTradeSkill(id, repeatCount)
+    if tradeDisabled or IsTradeSkillLinked() then
+        return origDoTradeSkill(id, repeatCount)
+    end
+    if not id or id <= 0 then return end
 
-    for i = 1, numReagents do
-        local reagentName, reagentTexture, reagentCount, playerReagentCount = GetTradeSkillReagentInfo(id, i)
-        local reagentLink = GetTradeSkillReagentItemLink(id, i)
-        local reagentEntry = AbyssalStorage:EntryFromLink(reagentLink)
+    local name, skillType = origGetTradeSkillInfo(id)
+    if not name or skillType == "header" then return end
+    if (origGetTradeSkillNumReagents(id) or 0) == 0 then
+        return origDoTradeSkill(id, repeatCount)
+    end
 
-        local totalCount = playerReagentCount
-        if reagentEntry then
-            totalCount = totalCount + AbyssalStorage:GetItemCount(reagentEntry)
+    EnsureTradeCache()
+    if customActive and not tradeCache.virtualByReal[id] then return end
+
+    local counts = tradeCache.counts[name]
+    if not counts then
+        local bagMax, totalMax = GetRecipeCounts(id)
+        counts = { bag = bagMax, total = totalMax }
+        tradeCache.counts[name] = counts
+    end
+
+    repeatCount = tonumber(repeatCount) or 1
+    repeatCount = math.floor(repeatCount)
+    if repeatCount < 1 then repeatCount = 1 end
+
+    local bagMax = counts.bag or 0
+    local totalMax = counts.total or 0
+    if totalMax < 1 then return end
+    if repeatCount <= bagMax or totalMax <= bagMax then
+        return origDoTradeSkill(id, repeatCount)
+    end
+
+    local spellId = GetTradeSkillSpellId(id)
+    if not spellId then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage: Could not find the recipe spell ID.|r")
+        return
+    end
+
+    local craftCount = math.min(repeatCount, totalMax)
+    AbyssalStorage:SendCommand("abs craft " .. spellId .. " " .. craftCount)
+end
+
+local function ApplyTradeScroll()
+    if not TradeSkillListScrollFrame then return end
+    local maxOffset = math.max(0, #tradeCache.filtered - TRADE_SKILL_ROWS)
+    local offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
+
+    if tradeResetScroll then
+        offset = 0
+        tradeResetScroll = false
+    elseif tradeScrollToSelected then
+        local selectedVirtual = tradeCache.virtualByReal[origGetTradeSkillSelectionIndex()]
+        if selectedVirtual then
+            if selectedVirtual < offset + 1 then
+                offset = selectedVirtual - 1
+            elseif selectedVirtual > offset + TRADE_SKILL_ROWS then
+                offset = selectedVirtual - TRADE_SKILL_ROWS
+            end
         end
+        tradeScrollToSelected = false
+    end
 
-        if totalCount < reagentCount then
-            canCraftWithVault = false
-            maxCrafts = 0
-        else
-            local craftsFromThis = math.floor(totalCount / reagentCount)
-            maxCrafts = math.min(maxCrafts, craftsFromThis)
+    offset = math.max(0, math.min(maxOffset, offset))
+    FauxScrollFrame_SetOffset(TradeSkillListScrollFrame, offset)
+
+    local scrollBar = _G["TradeSkillListScrollFrameScrollBar"]
+    if scrollBar then
+        scrollBar:SetMinMaxValues(0, maxOffset * TRADE_SKILL_LINE_HEIGHT)
+        local value = offset * TRADE_SKILL_LINE_HEIGHT
+        if math.abs(scrollBar:GetValue() - value) > 0.01 then
+            scrollBar:SetValue(value)
+        end
+    end
+end
+
+local function CacheVisibleCounts()
+    local offset = 0
+    if TradeSkillListScrollFrame and FauxScrollFrame_GetOffset then
+        offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
+    end
+    for i = 1, TRADE_SKILL_ROWS do
+        local realIndex = tradeCache.filtered[i + offset]
+        if realIndex then GetRecipeCounts(realIndex) end
+    end
+    local selected = origGetTradeSkillSelectionIndex()
+    if selected and selected > 0 then GetRecipeCounts(selected) end
+end
+
+local function EnsureVisibleSelection()
+    if not customActive then return end
+    local selected = origGetTradeSkillSelectionIndex()
+    local selectedName, selectedType
+    if selected > 0 then
+        selectedName, selectedType = origGetTradeSkillInfo(selected)
+    end
+    if selectedName and selectedType ~= "header" and tradeCache.virtualByReal[selected] then
+        return
+    end
+
+    local firstRecipe
+    for _, realIndex in ipairs(tradeCache.filtered) do
+        local _, skillType = origGetTradeSkillInfo(realIndex)
+        if skillType ~= "header" then
+            firstRecipe = realIndex
+            break
         end
     end
 
-    if maxCrafts == math.huge then maxCrafts = 0 end
-    return canCraftWithVault, maxCrafts
+    if not firstRecipe then
+        TradeSkillFrame.numAvailable = 0
+        return
+    end
+
+    local inputCount = 1
+    if TradeSkillInputBox then
+        inputCount = TradeSkillInputBox:GetNumber() or 1
+    end
+
+    TradeSkillFrame_SetSelection(firstRecipe)
+
+    if TradeSkillInputBox then
+        if inputCount < 1 then inputCount = 1 end
+        TradeSkillInputBox:SetNumber(inputCount)
+    end
+    tradeScrollToSelected = true
 end
 
-local tradeSkillHooked = false
+local function UpdateTradeEmptyState()
+    if not tradeEmptyText and TradeSkillFrame then
+        tradeEmptyText = TradeSkillFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        tradeEmptyText:SetPoint("CENTER", TradeSkillListScrollFrame, "CENTER", 0, 0)
+        tradeEmptyText:SetTextColor(0.55, 0.55, 0.55)
+        tradeEmptyText:SetText("No craftable recipes")
+    end
+    if not tradeEmptyText then return end
+    if customActive and #tradeCache.filtered == 0 and tradeCache.nativeNum > 0 then
+        tradeEmptyText:Show()
+    else
+        tradeEmptyText:Hide()
+    end
+end
+
+local function UpdateTradeSkillInternal()
+    if not TradeSkillFrame:IsShown() then
+        return origTradeSkillUpdate()
+    end
+
+    local linked = IsTradeSkillLinked() and true or false
+    local linkChanged = linked ~= lastLinked
+    if linkChanged then
+        lastLinked = linked
+        customActive = (not linked) and customRequested or false
+        InvalidateTradeCache()
+        if linked then
+            origOnlyShowMakeable(customRequested)
+        else
+            origOnlyShowMakeable(false)
+            tradeResetScroll = true
+        end
+    end
+
+    if linked then
+        if linkChanged then
+            local selection = origGetTradeSkillSelectionIndex()
+            local name, skillType
+            if selection > 0 then
+                name, skillType = origGetTradeSkillInfo(selection)
+            end
+            if not name or skillType == "header" then
+                selection = origGetFirstTradeSkill() or 0
+                if selection > 0 then
+                    TradeSkillFrame_SetSelection(selection)
+                end
+                FauxScrollFrame_SetOffset(TradeSkillListScrollFrame, 0)
+                local scrollBar = _G["TradeSkillListScrollFrameScrollBar"]
+                if scrollBar then scrollBar:SetValue(0) end
+            end
+        end
+        tradeResetScroll = false
+        tradeScrollToSelected = false
+        UpdateTradeEmptyState()
+        return origTradeSkillUpdate()
+    end
+
+    EnsureTradeCache()
+    EnsureVisibleSelection()
+    ApplyTradeScroll()
+    CacheVisibleCounts()
+    tradeCache.selectedVirtual = tradeCache.virtualByReal[origGetTradeSkillSelectionIndex()] or 0
+
+    local savedNumTradeSkills = GetNumTradeSkills
+    local savedTradeSkillInfo = GetTradeSkillInfo
+    local savedSelectionIndex = GetTradeSkillSelectionIndex
+
+    GetNumTradeSkills = function()
+        return #tradeCache.filtered
+    end
+    GetTradeSkillInfo = VirtualGetTradeSkillInfo
+    GetTradeSkillSelectionIndex = function()
+        return tradeCache.virtualByReal[origGetTradeSkillSelectionIndex()] or 0
+    end
+
+    local ok, err = pcall(origTradeSkillUpdate)
+    GetNumTradeSkills = savedNumTradeSkills
+    GetTradeSkillInfo = savedTradeSkillInfo
+    GetTradeSkillSelectionIndex = savedSelectionIndex
+    if not ok then
+        ReportTradeError(err)
+        return
+    end
+
+    local offset = FauxScrollFrame_GetOffset(TradeSkillListScrollFrame) or 0
+    for i = 1, TRADE_SKILL_ROWS do
+        local button = _G["TradeSkillSkill" .. i]
+        local realIndex = tradeCache.filtered[i + offset]
+        if button and realIndex then
+            button:SetID(realIndex)
+        end
+    end
+
+    local selectedReal = origGetTradeSkillSelectionIndex()
+    local selectedVirtual = tradeCache.virtualByReal[selectedReal]
+    local selectedType
+    if selectedReal > 0 then
+        local _, skillType = origGetTradeSkillInfo(selectedReal)
+        selectedType = skillType
+    end
+    if not selectedVirtual or selectedType == "header" then
+        TradeSkillFrame.numAvailable = 0
+        if TradeSkillCreateButton then TradeSkillCreateButton:Disable() end
+        if TradeSkillCreateAllButton then TradeSkillCreateAllButton:Disable() end
+    else
+        local okPost, errPost = pcall(PostTradeSelection, selectedReal, true)
+        if not okPost then ReportTradeError(errPost) end
+    end
+
+    UpdateTradeEmptyState()
+end
+
+local function WrappedTradeSkillUpdate()
+    if customUpdating then return end
+    if tradeDisabled then
+        pcall(origTradeSkillUpdate)
+        return
+    end
+    customUpdating = true
+    local ok, err = pcall(UpdateTradeSkillInternal)
+    customUpdating = false
+    if not ok then ReportTradeError(err) end
+end
+
+local function WrappedTradeSkillEvent(self, event, ...)
+    if customUpdating then return end
+    if tradeDisabled then
+        pcall(origTradeSkillEvent, self, event, ...)
+        return
+    end
+    if event == "TRADE_SKILL_UPDATE" or event == "TRADE_SKILL_FILTER_UPDATE" then
+        InvalidateTradeCache()
+    end
+    local ok, err = pcall(origTradeSkillEvent, self, event, ...)
+    if not ok then ReportTradeError(err) end
+end
+
+local function WrappedOnlyShowMakeableImpl(filter)
+    local requested = filter and true or false
+    local changed = requested ~= customRequested
+    customRequested = requested
+
+    if IsTradeSkillLinked() then
+        customActive = false
+        if changed then
+            InvalidateTradeCache()
+            tradeResetScroll = true
+        end
+        origOnlyShowMakeable(requested)
+        return
+    end
+
+    customActive = requested
+    if changed then
+        InvalidateTradeCache()
+        tradeResetScroll = true
+    end
+    origOnlyShowMakeable(false)
+
+    if changed and TradeSkillFrame and TradeSkillFrame:IsShown() then
+        TradeSkillFrame_Update()
+    end
+end
+
+local function WrappedOnlyShowMakeable(filter)
+    if tradeDisabled then
+        pcall(origOnlyShowMakeable, filter)
+        return
+    end
+    local ok, err = pcall(WrappedOnlyShowMakeableImpl, filter)
+    if not ok then ReportTradeError(err) end
+end
+
+local function RefreshTradeSkillNowImpl()
+    if tradeRefreshFrame then tradeRefreshFrame:Hide() end
+    lastTradeVaultVersion = AbyssalStorage.vaultVersion or 0
+    if not TradeSkillFrame or not TradeSkillFrame:IsShown() or IsTradeSkillLinked() then
+        return
+    end
+
+    InvalidateTradeCache()
+
+    local selected = origGetTradeSkillSelectionIndex()
+    local name, skillType
+    if selected > 0 then
+        name, skillType = origGetTradeSkillInfo(selected)
+    end
+    if not name or skillType == "header" then
+        selected = origGetFirstTradeSkill() or 0
+        if selected > 0 then tradeScrollToSelected = true end
+    end
+
+    if selected > 0 then
+        local inputCount = 1
+        if TradeSkillInputBox then
+            inputCount = TradeSkillInputBox:GetNumber() or 1
+        end
+        TradeSkillFrame_SetSelection(selected)
+        if TradeSkillInputBox then
+            if inputCount < 1 then inputCount = 1 end
+            TradeSkillInputBox:SetNumber(inputCount)
+        end
+    end
+
+    TradeSkillFrame_Update()
+end
+
+function AbyssalStorage:RefreshTradeSkillNow()
+    if tradeDisabled then return end
+    local ok, err = pcall(RefreshTradeSkillNowImpl)
+    if not ok then ReportTradeError(err) end
+end
+
+function AbyssalStorage:RefreshTradeSkill()
+    if tradeDisabled or not origGetNumTradeSkills then return end
+    local version = self.vaultVersion or 0
+    if version == lastTradeVaultVersion then return end
+    lastTradeVaultVersion = version
+    InvalidateTradeCache()
+
+    if not TradeSkillFrame or not TradeSkillFrame:IsShown() or IsTradeSkillLinked() then
+        if tradeRefreshFrame then tradeRefreshFrame:Hide() end
+        return
+    end
+
+    if not tradeRefreshFrame then
+        tradeRefreshFrame = CreateFrame("Frame")
+        tradeRefreshFrame:Hide()
+        tradeRefreshFrame.elapsed = 0
+        tradeRefreshFrame:SetScript("OnUpdate", function(timer, elapsed)
+            timer.elapsed = timer.elapsed + elapsed
+            if timer.elapsed < 0.1 then return end
+            timer.elapsed = 0
+            timer:Hide()
+            AbyssalStorage:RefreshTradeSkillNow()
+        end)
+    end
+
+    tradeRefreshFrame.elapsed = 0
+    tradeRefreshFrame:Show()
+end
 
 local function HookTradeSkill()
     if not TradeSkillFrame or tradeSkillHooked then return end
     tradeSkillHooked = true
 
-    -- Hook selection to update reagent counts, Create and Create All buttons
+    origTradeSkillUpdate = TradeSkillFrame_Update
+    origTradeSkillEvent = TradeSkillFrame_OnEvent
+    origOnlyShowMakeable = TradeSkillOnlyShowMakeable
+    origGetNumTradeSkills = GetNumTradeSkills
+    origGetTradeSkillInfo = GetTradeSkillInfo
+    origGetTradeSkillSelectionIndex = GetTradeSkillSelectionIndex
+    origGetTradeSkillReagentInfo = GetTradeSkillReagentInfo
+    origGetTradeSkillReagentItemLink = GetTradeSkillReagentItemLink
+    origGetTradeSkillNumReagents = GetTradeSkillNumReagents
+    origGetTradeSkillRecipeLink = GetTradeSkillRecipeLink
+    origDoTradeSkill = DoTradeSkill
+    origGetFirstTradeSkill = GetFirstTradeSkill
+
+    customRequested = TradeSkillFrameAvailableFilterCheckButton
+        and TradeSkillFrameAvailableFilterCheckButton:GetChecked()
+        and true or false
+    lastLinked = IsTradeSkillLinked() and true or false
+    customActive = (not lastLinked) and customRequested or false
+
+    TradeSkillFrame_Update = WrappedTradeSkillUpdate
+    TradeSkillFrame_OnEvent = WrappedTradeSkillEvent
+    TradeSkillOnlyShowMakeable = WrappedOnlyShowMakeable
+    DoTradeSkill = WrappedDoTradeSkill
+
+    TradeSkillFrame:SetScript("OnEvent", WrappedTradeSkillEvent)
+
+    hooksecurefunc("ExpandTradeSkillSubClass", InvalidateTradeCache)
+    hooksecurefunc("CollapseTradeSkillSubClass", InvalidateTradeCache)
     hooksecurefunc("TradeSkillFrame_SetSelection", function(id)
-        if not TradeSkillFrame:IsVisible() then return end
-
-        local numReagents = GetTradeSkillNumReagents(id)
-        local canCraftWithVault, maxCrafts = GetMaxCraftsWithVault(id)
-
-        -- Update reagent displays: show vault count as green label on top of icon
-        for i = 1, 8 do
-            local reagentFrame = _G["TradeSkillReagent" .. i]
-            if reagentFrame and reagentFrame.abyssalVaultLabel then
-                reagentFrame.abyssalVaultLabel:Hide()
-            end
-        end
-
-        for i = 1, numReagents do
-            local _, _, reagentCount, playerReagentCount = GetTradeSkillReagentInfo(id, i)
-            local reagentLink = GetTradeSkillReagentItemLink(id, i)
-            local reagentEntry = AbyssalStorage:EntryFromLink(reagentLink)
-
-            local reagentFrame = _G["TradeSkillReagent" .. i]
-            if reagentEntry and reagentFrame then
-                local vaultCount = AbyssalStorage:GetItemCount(reagentEntry)
-                if vaultCount > 0 then
-                    -- Create or reuse the vault label on the icon
-                    if not reagentFrame.abyssalVaultLabel then
-                        local icon = _G["TradeSkillReagent" .. i .. "IconTexture"]
-                        local parent = icon and icon:GetParent() or reagentFrame
-                        local label = parent:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-                        label:SetPoint("TOP", icon or parent, "TOP", 0, -2)
-                        label:SetJustifyH("CENTER")
-                        reagentFrame.abyssalVaultLabel = label
-                    end
-
-                    local label = reagentFrame.abyssalVaultLabel
-                    local displayCount = vaultCount > 9999 and "9999+" or tostring(vaultCount)
-                    label:SetText(displayCount)
-                    label:SetTextColor(0.2, 1, 0.2)
-                    label:Show()
-
-                    -- Also fix the count color if vault covers the gap
-                    local totalCount = playerReagentCount + vaultCount
-                    local countLabel = _G["TradeSkillReagent" .. i .. "Count"]
-                    if countLabel and totalCount >= reagentCount then
-                        countLabel:SetTextColor(1, 1, 1)
-                    end
-                end
-            end
-        end
-
-        -- Enable Create / Create All buttons if vault covers the gap
-        if canCraftWithVault then
-            if TradeSkillCreateButton then
-                TradeSkillCreateButton:Enable()
-            end
-            if TradeSkillCreateAllButton then
-                TradeSkillCreateAllButton:Enable()
-            end
-        end
+        local ok, err = pcall(PostTradeSelection, id)
+        if not ok then ReportTradeError(err) end
     end)
 
-    -- Suppress "Missing Reagent" error when vault covers the gap
-    -- We hook PreClick to set a flag, then filter UIErrorsFrame
-    local suppressErrors = false
-    local originalOnEvent = UIErrorsFrame:GetScript("OnEvent")
-    UIErrorsFrame:SetScript("OnEvent", function(self, event, msg, ...)
-        if suppressErrors and event == "UI_ERROR_MESSAGE" then
-            return -- swallow the error
-        end
-        if originalOnEvent then
-            return originalOnEvent(self, event, msg, ...)
-        end
-    end)
-
-    -- Hook Create button to use .abs craft when vault materials are needed
-    if TradeSkillCreateButton then
-        TradeSkillCreateButton:HookScript("PreClick", function(self)
-            local id = TradeSkillFrame.selectedSkill
-            if id and NeedsVaultMaterials(id) then
-                suppressErrors = true
-            end
-        end)
-        TradeSkillCreateButton:HookScript("PostClick", function(self)
-            if not suppressErrors then return end
-            suppressErrors = false
-
-            local id = TradeSkillFrame.selectedSkill
-            if not id then return end
-            if not NeedsVaultMaterials(id) then return end
-
-            local spellId = GetTradeSkillSpellId(id)
-            if not spellId then return end
-
-            local count = TradeSkillInputBox and TradeSkillInputBox:GetNumber() or 1
-            if count < 1 then count = 1 end
-
-            AbyssalStorage:SendCommand("abs craft " .. spellId .. " " .. count)
+    if TradeSkillRankFrame then
+        TradeSkillRankFrame:SetScript("OnEvent", function()
+            if not customUpdating then TradeSkillFrame_Update() end
         end)
     end
 
-    -- Hook Create All button
-    if TradeSkillCreateAllButton then
-        TradeSkillCreateAllButton:HookScript("PreClick", function(self)
-            local id = TradeSkillFrame.selectedSkill
-            if id and NeedsVaultMaterials(id) then
-                suppressErrors = true
-            end
-        end)
-        TradeSkillCreateAllButton:HookScript("PostClick", function(self)
-            if not suppressErrors then return end
-            suppressErrors = false
-
-            local id = TradeSkillFrame.selectedSkill
-            if not id then return end
-            if not NeedsVaultMaterials(id) then return end
-
-            local spellId = GetTradeSkillSpellId(id)
-            if not spellId then return end
-
-            local _, maxCrafts = GetMaxCraftsWithVault(id)
-            if maxCrafts < 1 then return end
-
-            AbyssalStorage:SendCommand("abs craft " .. spellId .. " " .. maxCrafts)
-        end)
-    end
+    TradeSkillFrame:HookScript("OnShow", function()
+        lastTradeVaultVersion = -1
+        InvalidateTradeCache()
+    end)
+    TradeSkillFrame:HookScript("OnHide", function()
+        tradeResetScroll = false
+        tradeScrollToSelected = false
+        if tradeRefreshFrame then tradeRefreshFrame:Hide() end
+        InvalidateTradeCache()
+    end)
 end
 
--- Hook TradeSkillFrame when it loads (it's loaded on demand)
 local tradeHookFrame = CreateFrame("Frame")
 tradeHookFrame:RegisterEvent("ADDON_LOADED")
 tradeHookFrame:SetScript("OnEvent", function(self, event, addon)
     if addon == "Blizzard_TradeSkillUI" then
         HookTradeSkill()
-        self:UnregisterEvent("ADDON_LOADED")
+        if tradeSkillHooked then
+            self:UnregisterEvent("ADDON_LOADED")
+        end
     end
 end)
--- Also try hooking immediately in case it's already loaded
 if TradeSkillFrame then
     HookTradeSkill()
+    tradeHookFrame:UnregisterEvent("ADDON_LOADED")
 end
 
 -- ============================================================================
@@ -670,10 +1156,6 @@ end
 -- ============================================================================
 
 AbyssalStorageFrame:SetScript("OnShow", function(self)
-    -- Trigger GetItemInfo for all items to populate client cache
-    for entry, _ in pairs(AbyssalStorage.items) do
-        GetItemInfo(entry)
-    end
     -- Slight delay to let item info queries return
     AbyssalStorage.SetTimer(0.5, function()
         AbyssalStorage:UpdateUI()
