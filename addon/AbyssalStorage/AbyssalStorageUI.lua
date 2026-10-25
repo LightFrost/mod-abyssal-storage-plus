@@ -1191,6 +1191,7 @@ minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 8)
 minimapButton:SetMovable(true)
 minimapButton:EnableMouse(true)
 minimapButton:RegisterForDrag("LeftButton")
+minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 local minimapBg = minimapButton:CreateTexture(nil, "BACKGROUND")
 minimapBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
@@ -1233,7 +1234,12 @@ minimapButton:SetScript("OnDragStop", function(self)
     self:SetScript("OnUpdate", nil)
 end)
 
-minimapButton:SetScript("OnClick", function()
+minimapButton:SetScript("OnClick", function(self, button)
+    if button == "RightButton" then
+        AbyssalStorage:Deposit()
+        return
+    end
+
     if AbyssalStorageFrame:IsShown() then
         AbyssalStorageFrame:Hide()
     else
@@ -1245,7 +1251,9 @@ end)
 minimapButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:AddLine("Abyssal Storage")
-    GameTooltip:AddLine("Click to open, drag to move", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Left-click: Open", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Right-click: Deposit All", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Drag: Move", 0.8, 0.8, 0.8)
     GameTooltip:Show()
 end)
 

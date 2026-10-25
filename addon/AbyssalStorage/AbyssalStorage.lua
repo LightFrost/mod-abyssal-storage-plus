@@ -3,6 +3,32 @@ AbyssalStorage = AbyssalStorage or {}
 AbyssalStorage.items = {} -- { [itemEntry] = count }
 AbyssalStorage.vaultVersion = 0
 AbyssalStorage.PREFIX = "ABYS"
+AbyssalStorageDB = AbyssalStorageDB or {}
+
+BINDING_HEADER_ABYSSALSTORAGE = "Abyssal Storage"
+BINDING_NAME_ABYSSALSTORAGE_DEPOSITALL = "Deposit All"
+
+local function ApplyDefaultDepositBinding()
+    if AbyssalStorageDB.depositBindingInitialized then return end
+
+    if GetBindingKey("ABYSSALSTORAGE_DEPOSITALL") then
+        AbyssalStorageDB.depositBindingInitialized = true
+        return
+    end
+
+    local applied = true
+    if GetBindingAction("CTRL-B") == "" then
+        if SetBinding("CTRL-B", "ABYSSALSTORAGE_DEPOSITALL") then
+            SaveBindings(GetCurrentBindingSet())
+        else
+            applied = false
+        end
+    end
+
+    if applied then
+        AbyssalStorageDB.depositBindingInitialized = true
+    end
+end
 
 -- ============================================================================
 -- Utility
@@ -187,6 +213,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
         end
     elseif event == "PLAYER_LOGIN" then
         AbyssalStorage:RequestSync()
+        ApplyDefaultDepositBinding()
     end
 end)
 

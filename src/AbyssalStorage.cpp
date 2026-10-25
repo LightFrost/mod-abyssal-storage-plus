@@ -173,8 +173,13 @@ bool AbyssalStorageMgr::ShouldAutoStore(Player* player, ItemTemplate const* item
     if (itemTemplate->TotemCategory != 0)
         return false;
 
-    // Jeweler's Kit has no TotemCategory in this database
-    if (itemTemplate->ItemId == 20815)
+    // Non-stackable devices are tools and gadgets, not materials
+    if (itemTemplate->Class == ITEM_CLASS_TRADE_GOODS &&
+        itemTemplate->SubClass == ITEM_SUBCLASS_DEVICES && itemTemplate->Stackable <= 1)
+        return false;
+
+    // Kits, grinders, and lockpicks lack TotemCategory data
+    if (itemTemplate->ItemId == 20815 || itemTemplate->ItemId == 20824 || itemTemplate->ItemId == 7872)
         return false;
 
     if (IsItemRequiredByActiveQuest(player, itemTemplate->ItemId))
