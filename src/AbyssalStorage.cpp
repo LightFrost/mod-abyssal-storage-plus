@@ -1,4 +1,5 @@
 #include "AbyssalStorage.h"
+#include "AccountMgr.h"
 #include "DatabaseEnv.h"
 #include "ItemTemplate.h"
 #include "Player.h"
@@ -8,6 +9,7 @@
 #include "ObjectMgr.h"
 #include "QuestDef.h"
 #include "Log.h"
+#include <cctype>
 
 AbyssalPlayerData* GetAbyssalData(Player* player)
 {
@@ -171,6 +173,34 @@ bool AbyssalStorageMgr::ShouldAutoStore(Player* player, ItemTemplate const* item
         return false;
 
     return true;
+}
+
+bool AbyssalStorageMgr::IsBotAccount(Player* player)
+{
+    if (!player || !player->GetSession())
+        return false;
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+
+    {
+        std::lock_guard<std::mutex> lock(_botCacheMutex);
+        auto it = _botAccountCache.find(accountId);
+        if (it != _botAccountCache.end())
+            return it->second;
+    }
+
+    std::string username;
+    if (!sAccountMgr->GetName(accountId, username))
+        return false; // don't cache failures so the lookup is retried later
+
+    static char const botPrefix[] = "rndbot";
+    bool isBot = username.size() >= 6;
+    for (size_t i = 0; isBot && i < 6; ++i)
+        isBot = std::tolower(static_cast<unsigned char>(username[i])) == botPrefix[i];
+
+    std::lock_guard<std::mutex> lock(_botCacheMutex);
+    _botAccountCache[accountId] = isBot;
+    return isBot;
 }
 
 // Send a raw LANG_ADDON packet. The WoW 3.3.5 client splits on '\t':

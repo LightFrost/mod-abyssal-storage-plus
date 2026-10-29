@@ -49,6 +49,8 @@ public:
     bool IsItemRequiredByActiveQuest(Player* player, uint32 itemId);
     uint32 GetQuestReservedCount(Player* player, uint32 itemId);
 
+    bool IsBotAccount(Player* player);
+
     // Messaging helpers
     void SendAddonMessage(Player* player, std::string const& message);
     void SendFullSync(Player* player);
@@ -64,6 +66,11 @@ private:
     // accountId -> (itemEntry -> count)
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _storage;
     std::mutex _storageMutex;
+
+    // accountId -> is random bot account (cached, avoids per-call DB lookups)
+    std::unordered_map<uint32, bool> _botAccountCache;
+    std::mutex _botCacheMutex;
+
     bool _enabled = true;
 };
 

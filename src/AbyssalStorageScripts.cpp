@@ -1,5 +1,4 @@
 #include "AbyssalStorage.h"
-#include "AccountMgr.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "Config.h"
@@ -15,24 +14,6 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include <sstream>
-
-// Returns true if the player belongs to a random playerbot account (username prefix "rndbot")
-static bool IsRandomBot(Player* player)
-{
-    if (!player)
-        return false;
-    uint32 accountId = player->GetSession()->GetAccountId();
-    std::string username;
-    if (!sAccountMgr->GetName(accountId, username))
-        return false;
-    // Case-insensitive prefix check
-    if (username.size() < 6)
-        return false;
-    std::string prefix = username.substr(0, 6);
-    for (char& c : prefix)
-        c = std::tolower(static_cast<unsigned char>(c));
-    return prefix == "rndbot";
-}
 
 // Build a clickable item link like "|cff1eff00|Hitem:2589:0:0:0:0:0:0:0:0:0|h[Linen Cloth]|h|r"
 static std::string BuildItemLink(uint32 itemEntry)
@@ -84,7 +65,7 @@ public:
         if (!sAbyssalStorageMgr->IsEnabled())
             return;
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
@@ -97,7 +78,7 @@ public:
         if (!sAbyssalStorageMgr->IsEnabled())
             return;
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
@@ -131,7 +112,7 @@ public:
         if (!sAbyssalStorageMgr->IsEnabled() || !player || !item)
             return;
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
@@ -160,11 +141,12 @@ public:
         if (!sAbyssalStorageMgr->IsEnabled() || !player)
             return;
 
-        if (IsRandomBot(player))
+        // Cheap early-out: only players with deferred deposits need any work
+        AbyssalPlayerData* data = player->CustomData.Get<AbyssalPlayerData>("AbyssalData");
+        if (!data || data->pendingDeposits.empty())
             return;
 
-        AbyssalPlayerData* data = GetAbyssalData(player);
-        if (!data || data->pendingDeposits.empty())
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         // Move pending list out so we don't re-enter if DestroyItemCount triggers hooks
@@ -201,7 +183,7 @@ public:
         if (!sAbyssalStorageMgr->IsEnabled() || !player)
             return true;
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return true;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
@@ -287,7 +269,7 @@ public:
 
         Player* player = caster->ToPlayer();
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         SpellInfo const* spellInfo = spell->GetSpellInfo();
@@ -374,7 +356,7 @@ public:
 
         Player* player = caster->ToPlayer();
 
-        if (IsRandomBot(player))
+        if (sAbyssalStorageMgr->IsBotAccount(player))
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
