@@ -24,9 +24,14 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 
 ## Depositing Materials
 - Items should automatically get deposited on pickup
+- Right-click a material stack in your bags while the vault is open
 - Click "Deposit All" in the abyssal storage interface
 - Right-click the minimap icon to Deposit All
 - Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**. New installs default to `Ctrl-B` if that key is unbound. 
+
+## Withdrawing Materials
+- Right-click a stored material in the vault to withdraw the full stored amount
+- Shift-left-click a stored material to withdraw a specific amount
 
 <img width="692" height="641" alt="mod-abyssal-storage-plus" src="https://github.com/user-attachments/assets/803f2527-a286-4335-9ad9-487205ae8392" />
 
@@ -36,6 +41,7 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 |---|---|
 | `/asp` | Toggle the vault UI |
 | `/asp deposit` | Deposit all trade goods from inventory |
+| `/asp deposit <itemId> [count]` | Deposit one material type |
 | `/asp withdraw <itemId> [count]` | Withdraw items (omit count for all) |
 | `/asp sync` | Force re-sync from server |
 

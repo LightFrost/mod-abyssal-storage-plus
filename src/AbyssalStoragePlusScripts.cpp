@@ -496,7 +496,7 @@ public:
         return true;
     }
 
-    static bool HandleDepositCommand(ChatHandler* handler)
+    static bool HandleDepositCommand(ChatHandler* handler, Optional<uint32> optItemEntry, Optional<uint32> optCount)
     {
         if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
@@ -506,6 +506,57 @@ public:
             return false;
 
         uint32 accountId = player->GetSession()->GetAccountId();
+
+        if (optItemEntry)
+        {
+            uint32 itemEntry = *optItemEntry;
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry);
+            if (!itemTemplate)
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: Invalid item.");
+                return true;
+            }
+
+            if (!sAbyssalStoragePlusMgr->ShouldAutoStore(player, itemTemplate))
+            {
+                if (sAbyssalStoragePlusMgr->IsItemRequiredByActiveQuest(player, itemEntry))
+                    handler->SendSysMessage("Abyssal Storage Plus: That item is needed for a quest.");
+                else
+                    handler->SendSysMessage("Abyssal Storage Plus: Only materials can be deposited.");
+                return true;
+            }
+
+            uint32 playerHas = player->GetItemCount(itemEntry);
+            if (playerHas == 0)
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: You do not have that item.");
+                return true;
+            }
+
+            uint32 count = optCount.value_or(0);
+            if (count == 0 || count > playerHas)
+                count = playerHas;
+
+            uint32 questReserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, itemEntry);
+            if (playerHas <= questReserved)
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: That item is needed for a quest.");
+                return true;
+            }
+            count = std::min(count, playerHas - questReserved);
+
+            player->DestroyItemCount(itemEntry, count, true);
+            sAbyssalStoragePlusMgr->DepositItem(accountId, itemEntry, count);
+
+            AbyssalPlayerData* data = GetAbyssalData(player);
+            if (data)
+                data->autoStoreEnabled = true;
+
+            uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newTotal);
+            handler->PSendSysMessage("Abyssal Storage Plus: Deposited {} x{}.", BuildItemLink(itemEntry), count);
+            return true;
+        }
 
         // Collect totals first — DestroyItemCount searches the whole inventory,
         // so destroying during iteration can skip stacks of the same item

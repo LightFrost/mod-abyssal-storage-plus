@@ -99,6 +99,10 @@ function AbyssalStoragePlus:Deposit()
     self:SendCommand("asp deposit")
 end
 
+function AbyssalStoragePlus:DepositItem(entry, count)
+    self:SendCommand("asp deposit " .. entry .. " " .. (count or 0))
+end
+
 function AbyssalStoragePlus:RequestSync()
     self:SendCommand("asp sync")
 end
@@ -242,7 +246,14 @@ SlashCmdList["ABYSSAL"] = function(msg)
         AbyssalStoragePlus:RequestSync()
     else
         local cmd, rest = msg:match("^(%S+)%s*(.*)")
-        if cmd == "withdraw" then
+        if cmd == "deposit" then
+            local entry, count = rest:match("(%d+)%s*(%d*)")
+            if entry then
+                AbyssalStoragePlus:DepositItem(tonumber(entry), tonumber(count) or 0)
+            else
+                AbyssalStoragePlus:Deposit()
+            end
+        elseif cmd == "withdraw" then
             local entry, count = rest:match("(%d+)%s*(%d*)")
             if entry then
                 AbyssalStoragePlus:Withdraw(tonumber(entry), tonumber(count) or 0)
@@ -253,6 +264,7 @@ SlashCmdList["ABYSSAL"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffAbyssal Storage Plus Commands:|r")
             DEFAULT_CHAT_FRAME:AddMessage("  /asp - Toggle storage window")
             DEFAULT_CHAT_FRAME:AddMessage("  /asp deposit - Deposit all trade goods")
+            DEFAULT_CHAT_FRAME:AddMessage("  Right-click bag materials - Deposit that stack")
             DEFAULT_CHAT_FRAME:AddMessage("  /asp sync - Re-sync from server")
             DEFAULT_CHAT_FRAME:AddMessage("  /asp withdraw <id> [count] - Withdraw items")
         end

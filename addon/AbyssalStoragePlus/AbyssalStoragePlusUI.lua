@@ -316,6 +316,8 @@ local function CreateCell(index)
             GameTooltip:AddDoubleLine("Bags", tostring(bags), 0.78, 0.82, 0.88, 1, 1, 1)
             GameTooltip:AddDoubleLine("Abyssal Storage Plus", tostring(stored), 0.78, 0.82, 0.88, 0.2, 1, 0.6)
             GameTooltip:AddDoubleLine("Total", tostring(bags + stored), 1, 0.85, 0, 1, 0.85, 0)
+            GameTooltip:AddLine("Right-click: Withdraw all", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Shift-left-click: Withdraw amount", 0.8, 0.8, 0.8)
             GameTooltip:Show()
         end
     end)
@@ -323,21 +325,28 @@ local function CreateCell(index)
         GameTooltip:Hide()
     end)
 
-    -- Click — withdraw dialog; Shift-click — stack split
-    cell:SetScript("OnClick", function(self)
-        if self.itemEntry and self.itemCount then
-            if IsShiftKeyDown() and self.itemCount > 1 then
+    -- Right-click withdraws all; shift-left-click picks amount
+    cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    cell:SetScript("OnClick", function(self, button)
+        if not self.itemEntry or not self.itemCount then
+            return
+        end
+
+        if IsShiftKeyDown() and button == "LeftButton" then
+            if self.itemCount > 1 then
                 OpenStackSplitFrame(self.itemCount, self, "BOTTOMLEFT", "TOPLEFT")
             else
-                AbyssalStoragePlus:ShowWithdrawDialog(self.itemEntry, self.itemCount)
+                AbyssalStoragePlus:Withdraw(self.itemEntry, 1)
             end
+        elseif button == "RightButton" then
+            AbyssalStoragePlus:Withdraw(self.itemEntry, self.itemCount)
         end
     end)
 
-    -- Callback invoked by StackSplitFrame when user confirms a split amount
+    -- Stack split callback withdraws chosen amount
     cell.SplitStack = function(self, amount)
         if self.itemEntry and amount and amount > 0 then
-            AbyssalStoragePlus:ShowWithdrawDialog(self.itemEntry, amount)
+            AbyssalStoragePlus:Withdraw(self.itemEntry, amount)
         end
     end
 
@@ -350,32 +359,6 @@ end
 -- Pre-create cells for visible area
 for i = 1, ITEMS_PER_ROW * VISIBLE_ROWS do
     cells[i] = CreateCell(i)
-end
-
--- ============================================================================
--- Withdraw Dialog
--- ============================================================================
-
-StaticPopupDialogs["ABYSSAL_WITHDRAW"] = {
-    text = "Withdraw %s x%d from Abyssal Storage Plus?",
-    button1 = "Withdraw",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        AbyssalStoragePlus:Withdraw(data.entry, data.count)
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-function AbyssalStoragePlus:ShowWithdrawDialog(entry, count)
-    local name, link = GetItemInfo(entry)
-    local displayName = link or name or ("Item #" .. entry)
-    local dialog = StaticPopup_Show("ABYSSAL_WITHDRAW", displayName, count)
-    if dialog then
-        dialog.data = { entry = entry, count = count }
-    end
 end
 
 -- ============================================================================
@@ -464,6 +447,31 @@ hookFrame:SetScript("OnEvent", function(self, event)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     end
 end)
+
+-- ============================================================================
+-- Right-click bag items to deposit
+-- ============================================================================
+
+if ContainerFrameItemButton_OnClick then
+    local origContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
+    ContainerFrameItemButton_OnClick = function(self, button, ...)
+        if button == "RightButton" and AbyssalStoragePlusFrame:IsShown() then
+            local bag = self:GetParent():GetID()
+            local slot = self:GetID()
+            local link = GetContainerItemLink(bag, slot)
+            local itemType = link and select(6, GetItemInfo(link))
+            if itemType == "Trade Goods" or itemType == "Gem" then
+                local _, count, locked = GetContainerItemInfo(bag, slot)
+                local entry = link and AbyssalStoragePlus:EntryFromLink(link)
+                if entry and count and count > 0 and not locked then
+                    AbyssalStoragePlus:DepositItem(entry, count)
+                    return
+                end
+            end
+        end
+        return origContainerFrameItemButton_OnClick(self, button, ...)
+    end
+end
 
 -- ============================================================================
 -- TradeSkill Frame Hooks — Vault-aware recipe list and crafting
