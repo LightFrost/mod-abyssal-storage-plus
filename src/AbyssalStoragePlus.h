@@ -1,5 +1,5 @@
-#ifndef ABYSSAL_STORAGE_H
-#define ABYSSAL_STORAGE_H
+#ifndef ABYSSAL_STORAGE_PLUS_H
+#define ABYSSAL_STORAGE_PLUS_H
 
 #include "DataMap.h"
 #include "Define.h"
@@ -31,10 +31,10 @@ struct AbyssalPlayerData : public DataMap::Base
 
 AbyssalPlayerData* GetAbyssalData(Player* player);
 
-class AbyssalStorageMgr
+class AbyssalStoragePlusMgr
 {
 public:
-    static AbyssalStorageMgr* instance();
+    static AbyssalStoragePlusMgr* instance();
 
     void LoadAccountData(uint32 accountId);
     void UnloadAccountData(uint32 accountId);
@@ -61,7 +61,7 @@ public:
     void SetEnabled(bool enabled) { _enabled = enabled; }
 
 private:
-    AbyssalStorageMgr() = default;
+    AbyssalStoragePlusMgr() = default;
 
     // accountId -> (itemEntry -> count)
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _storage;
@@ -74,6 +74,6 @@ private:
     bool _enabled = true;
 };
 
-#define sAbyssalStorageMgr AbyssalStorageMgr::instance()
+#define sAbyssalStoragePlusMgr AbyssalStoragePlusMgr::instance()
 
-#endif // ABYSSAL_STORAGE_H
+#endif // ABYSSAL_STORAGE_PLUS_H

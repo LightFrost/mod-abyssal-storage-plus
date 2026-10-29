@@ -1,4 +1,4 @@
--- Abyssal Storage - UI Implementation
+-- Abyssal Storage Plus - UI Implementation
 
 local ITEMS_PER_ROW = 12
 local VISIBLE_ROWS = 8
@@ -13,7 +13,7 @@ local HEADER_HEIGHT = 32
 local SCROLL_WIDTH = 16
 local SCROLL_OUTSET = 19
 
-AbyssalStorageDB = AbyssalStorageDB or {}
+AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
 
 -- ============================================================================
 -- Sorted/Filtered Item List
@@ -51,7 +51,7 @@ end
 
 local function BuildDisplayList()
     wipe(displayList)
-    for entry, count in pairs(AbyssalStorage.items) do
+    for entry, count in pairs(AbyssalStoragePlus.items) do
         local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
         local category = GetItemCategory(itemType, itemSubType)
         local categoryMatches = selectedCategory == "All" or category == selectedCategory
@@ -73,7 +73,7 @@ end
 -- Main Frame
 -- ============================================================================
 
-local frame = CreateFrame("Frame", "AbyssalStorageFrame", UIParent)
+local frame = CreateFrame("Frame", "AbyssalStoragePlusFrame", UIParent)
 frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
 frame:SetPoint("CENTER")
 frame:SetFrameStrata("MEDIUM")
@@ -98,7 +98,7 @@ header:SetHeight(HEADER_HEIGHT)
 header:SetTexture("Interface\\PaperDollInfoFrame\\UI-GearManager-Title-Background")
 
 -- ESC to close
-tinsert(UISpecialFrames, "AbyssalStorageFrame")
+tinsert(UISpecialFrames, "AbyssalStoragePlusFrame")
 
 -- Title
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -106,7 +106,7 @@ local titleFont, titleHeight, titleFlags = GameFontHighlightLarge:GetFont()
 title:SetFont(titleFont, titleHeight + 2, titleFlags)
 title:SetShadowOffset(1, -1)
 title:SetPoint("TOP", frame, "TOP", 0, -9)
-title:SetText("Abyssal Storage")
+title:SetText("Abyssal Storage Plus")
 title:SetTextColor(1, 0.85, 0)
 
 -- Close button
@@ -118,7 +118,7 @@ closeBtn:SetFrameStrata("MEDIUM")
 -- Search Bar
 -- ============================================================================
 
-local searchBox = CreateFrame("EditBox", "AbyssalStorageSearchBox", frame)
+local searchBox = CreateFrame("EditBox", "AbyssalStoragePlusSearchBox", frame)
 searchBox:SetSize(SEARCH_WIDTH, SEARCH_HEIGHT)
 searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING + 52, -(HEADER_HEIGHT + 12))
 searchBox:SetFrameStrata("MEDIUM")
@@ -151,7 +151,7 @@ searchBox:SetScript("OnTextChanged", function(self)
     else
         searchPlaceholder:Hide()
     end
-    AbyssalStorage:UpdateUI()
+    AbyssalStoragePlus:UpdateUI()
 end)
 searchBox:SetScript("OnEditFocusGained", function(self)
     searchPlaceholder:Hide()
@@ -179,7 +179,7 @@ depositBtn:GetPushedTexture():SetVertexColor(0.18, 0.18, 0.18, 1)
 depositBtn:GetHighlightTexture():SetVertexColor(0.25, 0.25, 0.25, 0.9)
 depositBtn:GetFontString():SetTextColor(1, 0.85, 0)
 depositBtn:SetScript("OnClick", function()
-    AbyssalStorage:Deposit()
+    AbyssalStoragePlus:Deposit()
 end)
 
 local searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -208,7 +208,7 @@ for index, categoryName in ipairs(CATEGORY_ORDER) do
     categoryButton:GetHighlightTexture():SetVertexColor(0.25, 0.25, 0.25, 0.9)
     categoryButton:SetScript("OnClick", function()
         selectedCategory = categoryName
-        AbyssalStorage:UpdateUI()
+        AbyssalStoragePlus:UpdateUI()
     end)
     categoryButtons[categoryName] = categoryButton
 end
@@ -224,7 +224,7 @@ gridArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + SCROLL_
 gridArea:SetFrameStrata("MEDIUM")
 
 -- Scroll bar (plain Slider, no template)
-local scrollBar = CreateFrame("Slider", "AbyssalStorageScrollBar", frame)
+local scrollBar = CreateFrame("Slider", "AbyssalStoragePlusScrollBar", frame)
 scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, -(gridTop + 16))
 scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, FRAME_PADDING + 16)
 scrollBar:SetWidth(SCROLL_WIDTH)
@@ -246,7 +246,7 @@ scrollThumb:SetSize(SCROLL_WIDTH, 24)
 scrollBar:SetThumbTexture(scrollThumb)
 
 scrollBar:SetScript("OnValueChanged", function(self, value)
-    AbyssalStorage:UpdateGrid()
+    AbyssalStoragePlus:UpdateGrid()
 end)
 
 local function ScrollBy(delta)
@@ -276,7 +276,7 @@ local function CreateCell(index)
     local row = math.floor((index - 1) / ITEMS_PER_ROW)
     local col = (index - 1) % ITEMS_PER_ROW
 
-    local cell = CreateFrame("Button", "AbyssalStorageCell" .. index, gridArea)
+    local cell = CreateFrame("Button", "AbyssalStoragePlusCell" .. index, gridArea)
     cell:SetSize(CELL_SIZE, CELL_SIZE)
     cell:SetPoint("TOPLEFT", gridArea, "TOPLEFT", col * (CELL_SIZE + CELL_SPACING), -row * (CELL_SIZE + CELL_SPACING))
     cell:SetFrameStrata("MEDIUM")
@@ -314,7 +314,7 @@ local function CreateCell(index)
             local bags = GetItemCount and (GetItemCount(self.itemEntry, false) or 0) or 0
             local stored = self.itemCount or 0
             GameTooltip:AddDoubleLine("Bags", tostring(bags), 0.78, 0.82, 0.88, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Abyssal Storage", tostring(stored), 0.78, 0.82, 0.88, 0.2, 1, 0.6)
+            GameTooltip:AddDoubleLine("Abyssal Storage Plus", tostring(stored), 0.78, 0.82, 0.88, 0.2, 1, 0.6)
             GameTooltip:AddDoubleLine("Total", tostring(bags + stored), 1, 0.85, 0, 1, 0.85, 0)
             GameTooltip:Show()
         end
@@ -329,7 +329,7 @@ local function CreateCell(index)
             if IsShiftKeyDown() and self.itemCount > 1 then
                 OpenStackSplitFrame(self.itemCount, self, "BOTTOMLEFT", "TOPLEFT")
             else
-                AbyssalStorage:ShowWithdrawDialog(self.itemEntry, self.itemCount)
+                AbyssalStoragePlus:ShowWithdrawDialog(self.itemEntry, self.itemCount)
             end
         end
     end)
@@ -337,7 +337,7 @@ local function CreateCell(index)
     -- Callback invoked by StackSplitFrame when user confirms a split amount
     cell.SplitStack = function(self, amount)
         if self.itemEntry and amount and amount > 0 then
-            AbyssalStorage:ShowWithdrawDialog(self.itemEntry, amount)
+            AbyssalStoragePlus:ShowWithdrawDialog(self.itemEntry, amount)
         end
     end
 
@@ -357,11 +357,11 @@ end
 -- ============================================================================
 
 StaticPopupDialogs["ABYSSAL_WITHDRAW"] = {
-    text = "Withdraw %s x%d from Abyssal Storage?",
+    text = "Withdraw %s x%d from Abyssal Storage Plus?",
     button1 = "Withdraw",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        AbyssalStorage:Withdraw(data.entry, data.count)
+        AbyssalStoragePlus:Withdraw(data.entry, data.count)
     end,
     timeout = 0,
     whileDead = true,
@@ -369,7 +369,7 @@ StaticPopupDialogs["ABYSSAL_WITHDRAW"] = {
     preferredIndex = 3,
 }
 
-function AbyssalStorage:ShowWithdrawDialog(entry, count)
+function AbyssalStoragePlus:ShowWithdrawDialog(entry, count)
     local name, link = GetItemInfo(entry)
     local displayName = link or name or ("Item #" .. entry)
     local dialog = StaticPopup_Show("ABYSSAL_WITHDRAW", displayName, count)
@@ -382,7 +382,7 @@ end
 -- Grid Update
 -- ============================================================================
 
-function AbyssalStorage:UpdateGrid()
+function AbyssalStoragePlus:UpdateGrid()
     local scrollOffset = math.floor(scrollBar:GetValue())
     local startIndex = scrollOffset * ITEMS_PER_ROW + 1
     local totalCells = ITEMS_PER_ROW * VISIBLE_ROWS
@@ -408,11 +408,11 @@ function AbyssalStorage:UpdateGrid()
     end
 end
 
-function AbyssalStorage:UpdateUI()
-    if AbyssalStorage.RefreshTradeSkill then
-        AbyssalStorage:RefreshTradeSkill()
+function AbyssalStoragePlus:UpdateUI()
+    if AbyssalStoragePlus.RefreshTradeSkill then
+        AbyssalStoragePlus:RefreshTradeSkill()
     end
-    if not AbyssalStorageFrame:IsShown() then return end
+    if not AbyssalStoragePlusFrame:IsShown() then return end
 
     BuildDisplayList()
 
@@ -455,11 +455,11 @@ hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 hookFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         hooksecurefunc("OpenAllBags", function()
-            AbyssalStorageFrame:Show()
-            AbyssalStorage:UpdateUI()
+            AbyssalStoragePlusFrame:Show()
+            AbyssalStoragePlus:UpdateUI()
         end)
         hooksecurefunc("CloseAllBags", function()
-            AbyssalStorageFrame:Hide()
+            AbyssalStoragePlusFrame:Hide()
         end)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     end
@@ -542,18 +542,18 @@ local function GetVaultCountForReagent(reagentName, realIndex, reagentIndex)
         reagentItemRetry[reagentName] = now + 1
         if not origGetTradeSkillReagentItemLink or not realIndex or not reagentIndex then return 0 end
         local link = origGetTradeSkillReagentItemLink(realIndex, reagentIndex)
-        entry = AbyssalStorage:EntryFromLink(link)
+        entry = AbyssalStoragePlus:EntryFromLink(link)
         if not entry then return 0 end
         reagentItemIds[reagentName] = entry
     end
-    return AbyssalStorage.items[entry] or 0
+    return AbyssalStoragePlus.items[entry] or 0
 end
 
 local function ReportTradeError(err)
     tradeDisabled = true
     if tradeErrorReported then return end
     tradeErrorReported = true
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage trade hook error: " .. tostring(err) .. " (vault features disabled; /reload to retry)|r")
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage Plus trade hook error: " .. tostring(err) .. " (vault features disabled; /reload to retry)|r")
 end
 
 local function GetRecipeCounts(realIndex)
@@ -590,7 +590,7 @@ end
 
 local function EnsureTradeCache()
     local linked = IsTradeSkillLinked() and true or false
-    local version = tonumber(AbyssalStorage.vaultVersion) or 0
+    local version = tonumber(AbyssalStoragePlus.vaultVersion) or 0
     local nativeNum = tonumber(origGetNumTradeSkills()) or 0
     local lineName = GetTradeSkillLine()
     if tradeCache.version ~= version or tradeCache.skillLine ~= lineName then
@@ -761,12 +761,12 @@ local function WrappedDoTradeSkill(id, repeatCount)
 
     local spellId = GetTradeSkillSpellId(id)
     if not spellId then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage: Could not find the recipe spell ID.|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage Plus: Could not find the recipe spell ID.|r")
         return
     end
 
     local craftCount = math.min(repeatCount, totalMax)
-    AbyssalStorage:SendCommand("abs craft " .. spellId .. " " .. craftCount)
+    AbyssalStoragePlus:SendCommand("asp craft " .. spellId .. " " .. craftCount)
 end
 
 local function ApplyTradeScroll()
@@ -1031,7 +1031,7 @@ end
 
 local function RefreshTradeSkillNowImpl()
     if tradeRefreshFrame then tradeRefreshFrame:Hide() end
-    lastTradeVaultVersion = AbyssalStorage.vaultVersion or 0
+    lastTradeVaultVersion = AbyssalStoragePlus.vaultVersion or 0
     if not TradeSkillFrame or not TradeSkillFrame:IsShown() or IsTradeSkillLinked() then
         return
     end
@@ -1063,13 +1063,13 @@ local function RefreshTradeSkillNowImpl()
     TradeSkillFrame_Update()
 end
 
-function AbyssalStorage:RefreshTradeSkillNow()
+function AbyssalStoragePlus:RefreshTradeSkillNow()
     if tradeDisabled then return end
     local ok, err = pcall(RefreshTradeSkillNowImpl)
     if not ok then ReportTradeError(err) end
 end
 
-function AbyssalStorage:RefreshTradeSkill()
+function AbyssalStoragePlus:RefreshTradeSkill()
     if tradeDisabled or not origGetNumTradeSkills then return end
     local version = self.vaultVersion or 0
     if version == lastTradeVaultVersion then return end
@@ -1090,7 +1090,7 @@ function AbyssalStorage:RefreshTradeSkill()
             if timer.elapsed < 0.1 then return end
             timer.elapsed = 0
             timer:Hide()
-            AbyssalStorage:RefreshTradeSkillNow()
+            AbyssalStoragePlus:RefreshTradeSkillNow()
         end)
     end
 
@@ -1172,19 +1172,19 @@ end
 -- Request item info for all vault items on show
 -- ============================================================================
 
-AbyssalStorageFrame:SetScript("OnShow", function(self)
+AbyssalStoragePlusFrame:SetScript("OnShow", function(self)
     -- Slight delay to let item info queries return
-    AbyssalStorage.SetTimer(0.5, function()
-        AbyssalStorage:UpdateUI()
+    AbyssalStoragePlus.SetTimer(0.5, function()
+        AbyssalStoragePlus:UpdateUI()
     end)
-    AbyssalStorage:UpdateUI()
+    AbyssalStoragePlus:UpdateUI()
 end)
 
 -- ============================================================================
 -- Minimap Button
 -- ============================================================================
 
-local minimapButton = CreateFrame("Button", "AbyssalStorageMinimapButton", Minimap)
+local minimapButton = CreateFrame("Button", "AbyssalStoragePlusMinimapButton", Minimap)
 minimapButton:SetSize(32, 32)
 minimapButton:SetFrameStrata("MEDIUM")
 minimapButton:SetFrameLevel(Minimap:GetFrameLevel() + 8)
@@ -1214,7 +1214,7 @@ minimapHighlight:SetBlendMode("ADD")
 minimapHighlight:SetAllPoints()
 
 local function UpdateMinimapButtonPosition()
-    local angle = math.rad(AbyssalStorageDB.minimapAngle or 220)
+    local angle = math.rad(AbyssalStoragePlusDB.minimapAngle or 220)
     local radius = 80
     minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
@@ -1225,7 +1225,7 @@ minimapButton:SetScript("OnDragStart", function(self)
         local scale = Minimap:GetEffectiveScale()
         local cx, cy = GetCursorPosition()
         cx, cy = cx / scale, cy / scale
-        AbyssalStorageDB.minimapAngle = math.deg(math.atan2(cy - my, cx - mx))
+        AbyssalStoragePlusDB.minimapAngle = math.deg(math.atan2(cy - my, cx - mx))
         UpdateMinimapButtonPosition()
     end)
 end)
@@ -1236,21 +1236,21 @@ end)
 
 minimapButton:SetScript("OnClick", function(self, button)
     if button == "RightButton" then
-        AbyssalStorage:Deposit()
+        AbyssalStoragePlus:Deposit()
         return
     end
 
-    if AbyssalStorageFrame:IsShown() then
-        AbyssalStorageFrame:Hide()
+    if AbyssalStoragePlusFrame:IsShown() then
+        AbyssalStoragePlusFrame:Hide()
     else
-        AbyssalStorageFrame:Show()
-        AbyssalStorage:UpdateUI()
+        AbyssalStoragePlusFrame:Show()
+        AbyssalStoragePlus:UpdateUI()
     end
 end)
 
 minimapButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:AddLine("Abyssal Storage")
+    GameTooltip:AddLine("Abyssal Storage Plus")
     GameTooltip:AddLine("Left-click: Open", 0.8, 0.8, 0.8)
     GameTooltip:AddLine("Right-click: Deposit All", 0.8, 0.8, 0.8)
     GameTooltip:AddLine("Drag: Move", 0.8, 0.8, 0.8)

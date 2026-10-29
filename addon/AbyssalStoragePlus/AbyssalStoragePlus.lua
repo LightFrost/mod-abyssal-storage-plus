@@ -1,24 +1,24 @@
--- Abyssal Storage - Core Logic
-AbyssalStorage = AbyssalStorage or {}
-AbyssalStorage.items = {} -- { [itemEntry] = count }
-AbyssalStorage.vaultVersion = 0
-AbyssalStorage.PREFIX = "ABYS"
-AbyssalStorageDB = AbyssalStorageDB or {}
+-- Abyssal Storage Plus - Core Logic
+AbyssalStoragePlus = AbyssalStoragePlus or {}
+AbyssalStoragePlus.items = {} -- { [itemEntry] = count }
+AbyssalStoragePlus.vaultVersion = 0
+AbyssalStoragePlus.PREFIX = "ABYS"
+AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
 
-BINDING_HEADER_ABYSSALSTORAGE = "Abyssal Storage"
-BINDING_NAME_ABYSSALSTORAGE_DEPOSITALL = "Deposit All"
+BINDING_HEADER_ABYSSALSTORAGEPLUS = "Abyssal Storage Plus"
+BINDING_NAME_ABYSSALSTORAGEPLUS_DEPOSITALL = "Deposit All"
 
 local function ApplyDefaultDepositBinding()
-    if AbyssalStorageDB.depositBindingInitialized then return end
+    if AbyssalStoragePlusDB.depositBindingInitialized then return end
 
-    if GetBindingKey("ABYSSALSTORAGE_DEPOSITALL") then
-        AbyssalStorageDB.depositBindingInitialized = true
+    if GetBindingKey("ABYSSALSTORAGEPLUS_DEPOSITALL") then
+        AbyssalStoragePlusDB.depositBindingInitialized = true
         return
     end
 
     local applied = true
     if GetBindingAction("CTRL-B") == "" then
-        if SetBinding("CTRL-B", "ABYSSALSTORAGE_DEPOSITALL") then
+        if SetBinding("CTRL-B", "ABYSSALSTORAGEPLUS_DEPOSITALL") then
             SaveBindings(GetCurrentBindingSet())
         else
             applied = false
@@ -26,7 +26,7 @@ local function ApplyDefaultDepositBinding()
     end
 
     if applied then
-        AbyssalStorageDB.depositBindingInitialized = true
+        AbyssalStoragePlusDB.depositBindingInitialized = true
     end
 end
 
@@ -50,7 +50,7 @@ timerFrame:SetScript("OnUpdate", function(self, elapsed)
             table.remove(activeTimers, i)
             local ok, err = pcall(t.callback)
             if not ok then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage timer error: " .. tostring(err) .. "|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage Plus timer error: " .. tostring(err) .. "|r")
             end
         else
             i = i + 1
@@ -62,24 +62,24 @@ timerFrame:SetScript("OnUpdate", function(self, elapsed)
 end)
 timerFrame:Hide()
 
-function AbyssalStorage.SetTimer(delay, callback)
+function AbyssalStoragePlus.SetTimer(delay, callback)
     table.insert(activeTimers, { remaining = delay, callback = callback })
     timerFrame:Show()
 end
 
-function AbyssalStorage.CancelTimers()
+function AbyssalStoragePlus.CancelTimers()
     wipe(activeTimers)
     timerFrame:Hide()
 end
 
 -- Extract item entry from an item link: |Hitem:12345:...|h[Name]|h
-function AbyssalStorage:EntryFromLink(link)
+function AbyssalStoragePlus:EntryFromLink(link)
     if not link then return nil end
     local entry = link:match("item:(%d+)")
     return entry and tonumber(entry) or nil
 end
 
-function AbyssalStorage:GetItemCount(entry)
+function AbyssalStoragePlus:GetItemCount(entry)
     return self.items[entry] or 0
 end
 
@@ -87,20 +87,20 @@ end
 -- Server Communication
 -- ============================================================================
 
-function AbyssalStorage:SendCommand(cmd)
+function AbyssalStoragePlus:SendCommand(cmd)
     SendChatMessage("." .. cmd, "SAY")
 end
 
-function AbyssalStorage:Withdraw(entry, count)
-    self:SendCommand("abs withdraw " .. entry .. " " .. (count or 0))
+function AbyssalStoragePlus:Withdraw(entry, count)
+    self:SendCommand("asp withdraw " .. entry .. " " .. (count or 0))
 end
 
-function AbyssalStorage:Deposit()
-    self:SendCommand("abs deposit")
+function AbyssalStoragePlus:Deposit()
+    self:SendCommand("asp deposit")
 end
 
-function AbyssalStorage:RequestSync()
-    self:SendCommand("abs sync")
+function AbyssalStoragePlus:RequestSync()
+    self:SendCommand("asp sync")
 end
 
 -- ============================================================================
@@ -108,7 +108,7 @@ end
 -- ============================================================================
 
 -- msg is the body (arg2 from CHAT_MSG_ADDON), e.g. "SYNC:entry,count;..."
-function AbyssalStorage:HandleMessage(msg)
+function AbyssalStoragePlus:HandleMessage(msg)
     if not msg then return end
 
     local cmd = msg:match("^(%u+):")
@@ -127,7 +127,7 @@ function AbyssalStorage:HandleMessage(msg)
     end
 end
 
-function AbyssalStorage:HandleSync(payload)
+function AbyssalStoragePlus:HandleSync(payload)
     if not payload or payload == "" then
         self.items = {}
         self.vaultVersion = self.vaultVersion + 1
@@ -153,14 +153,14 @@ function AbyssalStorage:HandleSync(payload)
     end
 
     -- Debounce UI update for multi-packet syncs
-    AbyssalStorage.CancelTimers()
-    AbyssalStorage.SetTimer(0.1, function()
-        AbyssalStorage._syncActive = false
-        if AbyssalStorage.UpdateUI then AbyssalStorage:UpdateUI() end
+    AbyssalStoragePlus.CancelTimers()
+    AbyssalStoragePlus.SetTimer(0.1, function()
+        AbyssalStoragePlus._syncActive = false
+        if AbyssalStoragePlus.UpdateUI then AbyssalStoragePlus:UpdateUI() end
     end)
 end
 
-function AbyssalStorage:HandleUpdate(payload)
+function AbyssalStoragePlus:HandleUpdate(payload)
     if not payload then return end
     local entry, count = payload:match("(%d+),(%d+)")
     if entry and count then
@@ -177,7 +177,7 @@ function AbyssalStorage:HandleUpdate(payload)
     end
 end
 
-function AbyssalStorage:HandleDelete(payload)
+function AbyssalStoragePlus:HandleDelete(payload)
     if not payload then return end
     local entry = tonumber(payload)
     if entry then
@@ -187,9 +187,9 @@ function AbyssalStorage:HandleDelete(payload)
     end
 end
 
-function AbyssalStorage:HandleError(payload)
+function AbyssalStoragePlus:HandleError(payload)
     if payload then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage: " .. payload .. "|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage Plus: " .. payload .. "|r")
     end
 end
 
@@ -198,21 +198,21 @@ end
 -- ============================================================================
 
 if RegisterAddonMessagePrefix then
-    RegisterAddonMessagePrefix(AbyssalStorage.PREFIX)
+    RegisterAddonMessagePrefix(AbyssalStoragePlus.PREFIX)
 end
 
-local eventFrame = CreateFrame("Frame", "AbyssalStorageEventFrame", UIParent)
+local eventFrame = CreateFrame("Frame", "AbyssalStoragePlusEventFrame", UIParent)
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
     if event == "CHAT_MSG_ADDON" then
         -- arg1 = prefix ("ABYS"), arg2 = message body
-        if arg1 == AbyssalStorage.PREFIX then
-            AbyssalStorage:HandleMessage(arg2)
+        if arg1 == AbyssalStoragePlus.PREFIX then
+            AbyssalStoragePlus:HandleMessage(arg2)
         end
     elseif event == "PLAYER_LOGIN" then
-        AbyssalStorage:RequestSync()
+        AbyssalStoragePlus:RequestSync()
         ApplyDefaultDepositBinding()
     end
 end)
@@ -221,40 +221,40 @@ end)
 -- Slash Commands
 -- ============================================================================
 
-SLASH_ABYSSAL1 = "/abs"
+SLASH_ABYSSAL1 = "/asp"
 SLASH_ABYSSAL2 = "/abyssal"
 SlashCmdList["ABYSSAL"] = function(msg)
     if msg == "" or msg == "show" then
-        if AbyssalStorageFrame then
-            if AbyssalStorageFrame:IsShown() then
-                AbyssalStorageFrame:Hide()
+        if AbyssalStoragePlusFrame then
+            if AbyssalStoragePlusFrame:IsShown() then
+                AbyssalStoragePlusFrame:Hide()
             else
-                AbyssalStorageFrame:Show()
-                AbyssalStorage:UpdateUI()
-                if AbyssalStorage.UpdateUI then
-                    AbyssalStorage:UpdateUI()
+                AbyssalStoragePlusFrame:Show()
+                AbyssalStoragePlus:UpdateUI()
+                if AbyssalStoragePlus.UpdateUI then
+                    AbyssalStoragePlus:UpdateUI()
                 end
             end
         end
     elseif msg == "deposit" then
-        AbyssalStorage:Deposit()
+        AbyssalStoragePlus:Deposit()
     elseif msg == "sync" then
-        AbyssalStorage:RequestSync()
+        AbyssalStoragePlus:RequestSync()
     else
         local cmd, rest = msg:match("^(%S+)%s*(.*)")
         if cmd == "withdraw" then
             local entry, count = rest:match("(%d+)%s*(%d*)")
             if entry then
-                AbyssalStorage:Withdraw(tonumber(entry), tonumber(count) or 0)
+                AbyssalStoragePlus:Withdraw(tonumber(entry), tonumber(count) or 0)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Usage: /abs withdraw <itemEntry> [count]|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Usage: /asp withdraw <itemEntry> [count]|r")
             end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffAbyssal Storage Commands:|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  /abs - Toggle storage window")
-            DEFAULT_CHAT_FRAME:AddMessage("  /abs deposit - Deposit all trade goods")
-            DEFAULT_CHAT_FRAME:AddMessage("  /abs sync - Re-sync from server")
-            DEFAULT_CHAT_FRAME:AddMessage("  /abs withdraw <id> [count] - Withdraw items")
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffAbyssal Storage Plus Commands:|r")
+            DEFAULT_CHAT_FRAME:AddMessage("  /asp - Toggle storage window")
+            DEFAULT_CHAT_FRAME:AddMessage("  /asp deposit - Deposit all trade goods")
+            DEFAULT_CHAT_FRAME:AddMessage("  /asp sync - Re-sync from server")
+            DEFAULT_CHAT_FRAME:AddMessage("  /asp withdraw <id> [count] - Withdraw items")
         end
     end
 end

@@ -1,14 +1,14 @@
 [worldserver]
 
 ###################################################################################################
-#    MOD ABYSSAL STORAGE
+#    MOD ABYSSAL STORAGE PLUS
 ###################################################################################################
 
 #
-#    AbyssalStorage.Enable
-#        Description: Enable the Abyssal Storage module.
+#    AbyssalStoragePlus.Enable
+#        Description: Enable the Abyssal Storage Plus module.
 #        Default:     1 (Enabled)
 #                     0 (Disabled)
 #
 
-AbyssalStorage.Enable = 1
+AbyssalStoragePlus.Enable = 1

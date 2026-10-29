@@ -1,4 +1,4 @@
-#include "AbyssalStorage.h"
+#include "AbyssalStoragePlus.h"
 #include "AccountMgr.h"
 #include "DatabaseEnv.h"
 #include "ItemTemplate.h"
@@ -18,13 +18,13 @@ AbyssalPlayerData* GetAbyssalData(Player* player)
     return player->CustomData.GetDefault<AbyssalPlayerData>("AbyssalData");
 }
 
-AbyssalStorageMgr* AbyssalStorageMgr::instance()
+AbyssalStoragePlusMgr* AbyssalStoragePlusMgr::instance()
 {
-    static AbyssalStorageMgr instance;
+    static AbyssalStoragePlusMgr instance;
     return &instance;
 }
 
-void AbyssalStorageMgr::LoadAccountData(uint32 accountId)
+void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
 {
     {
         std::lock_guard<std::mutex> lock(_storageMutex);
@@ -50,19 +50,19 @@ void AbyssalStorageMgr::LoadAccountData(uint32 accountId)
     _storage[accountId] = std::move(items);
 }
 
-void AbyssalStorageMgr::UnloadAccountData(uint32 accountId)
+void AbyssalStoragePlusMgr::UnloadAccountData(uint32 accountId)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
     _storage.erase(accountId);
 }
 
-bool AbyssalStorageMgr::IsAccountLoaded(uint32 accountId)
+bool AbyssalStoragePlusMgr::IsAccountLoaded(uint32 accountId)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
     return _storage.find(accountId) != _storage.end();
 }
 
-void AbyssalStorageMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 count)
+void AbyssalStoragePlusMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 count)
 {
     {
         std::lock_guard<std::mutex> lock(_storageMutex);
@@ -73,7 +73,7 @@ void AbyssalStorageMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 c
         "ON DUPLICATE KEY UPDATE count = count + {}", accountId, itemEntry, count, count);
 }
 
-bool AbyssalStorageMgr::WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 count)
+bool AbyssalStoragePlusMgr::WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 count)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
 
@@ -101,7 +101,7 @@ bool AbyssalStorageMgr::WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 
     return true;
 }
 
-uint32 AbyssalStorageMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
+uint32 AbyssalStoragePlusMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
 
@@ -116,7 +116,7 @@ uint32 AbyssalStorageMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
     return itemIt->second;
 }
 
-std::unordered_map<uint32, uint32> AbyssalStorageMgr::GetAllItems(uint32 accountId)
+std::unordered_map<uint32, uint32> AbyssalStoragePlusMgr::GetAllItems(uint32 accountId)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
 
@@ -127,7 +127,7 @@ std::unordered_map<uint32, uint32> AbyssalStorageMgr::GetAllItems(uint32 account
     return accIt->second;
 }
 
-uint32 AbyssalStorageMgr::GetQuestReservedCount(Player* player, uint32 itemId)
+uint32 AbyssalStoragePlusMgr::GetQuestReservedCount(Player* player, uint32 itemId)
 {
     uint32 reserved = 0;
 
@@ -155,13 +155,13 @@ uint32 AbyssalStorageMgr::GetQuestReservedCount(Player* player, uint32 itemId)
     return reserved;
 }
 
-bool AbyssalStorageMgr::IsItemRequiredByActiveQuest(Player* player, uint32 itemId)
+bool AbyssalStoragePlusMgr::IsItemRequiredByActiveQuest(Player* player, uint32 itemId)
 {
     uint32 reserved = GetQuestReservedCount(player, itemId);
     return reserved > 0 && player->GetItemCount(itemId) <= reserved;
 }
 
-bool AbyssalStorageMgr::ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate)
+bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate)
 {
     if (!itemTemplate)
         return false;
@@ -188,7 +188,7 @@ bool AbyssalStorageMgr::ShouldAutoStore(Player* player, ItemTemplate const* item
     return true;
 }
 
-bool AbyssalStorageMgr::IsBotAccount(Player* player)
+bool AbyssalStoragePlusMgr::IsBotAccount(Player* player)
 {
     if (!player || !player->GetSession())
         return false;
@@ -236,7 +236,7 @@ static void SendOnePacket(Player* player, std::string const& msg)
     player->GetSession()->SendPacket(&data);
 }
 
-void AbyssalStorageMgr::SendAddonMessage(Player* player, std::string const& message)
+void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& message)
 {
     // Prefix with "ABYS\t" so client receives arg1="ABYS", arg2=message
     const size_t MAX_MSG_LEN = 240; // leave room for prefix
@@ -292,7 +292,7 @@ void AbyssalStorageMgr::SendAddonMessage(Player* player, std::string const& mess
         SendOnePacket(player, "ABYS\t" + chunk);
 }
 
-void AbyssalStorageMgr::SendFullSync(Player* player)
+void AbyssalStoragePlusMgr::SendFullSync(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
     auto items = GetAllItems(accountId);
@@ -316,13 +316,13 @@ void AbyssalStorageMgr::SendFullSync(Player* player)
     SendAddonMessage(player, msg);
 }
 
-void AbyssalStorageMgr::SendItemUpdate(Player* player, uint32 itemEntry, uint32 count)
+void AbyssalStoragePlusMgr::SendItemUpdate(Player* player, uint32 itemEntry, uint32 count)
 {
     std::string msg = "UPD:" + std::to_string(itemEntry) + "," + std::to_string(count);
     SendAddonMessage(player, msg);
 }
 
-void AbyssalStorageMgr::SendItemDelete(Player* player, uint32 itemEntry)
+void AbyssalStoragePlusMgr::SendItemDelete(Player* player, uint32 itemEntry)
 {
     std::string msg = "DEL:" + std::to_string(itemEntry);
     SendAddonMessage(player, msg);

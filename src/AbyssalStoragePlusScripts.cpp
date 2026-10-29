@@ -1,4 +1,4 @@
-#include "AbyssalStorage.h"
+#include "AbyssalStoragePlus.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "Config.h"
@@ -34,14 +34,14 @@ static std::string BuildItemLink(uint32 itemEntry)
 // WorldScript — Config Loading
 // ============================================================================
 
-class AbyssalStorageWorldScript : public WorldScript
+class AbyssalStoragePlusWorldScript : public WorldScript
 {
 public:
-    AbyssalStorageWorldScript() : WorldScript("AbyssalStorageWorldScript") { }
+    AbyssalStoragePlusWorldScript() : WorldScript("AbyssalStoragePlusWorldScript") { }
 
     void OnAfterConfigLoad(bool /*reload*/) override
     {
-        sAbyssalStorageMgr->SetEnabled(sConfigMgr->GetOption<bool>("AbyssalStorage.Enable", true));
+        sAbyssalStoragePlusMgr->SetEnabled(sConfigMgr->GetOption<bool>("AbyssalStoragePlus.Enable", true));
     }
 };
 
@@ -49,10 +49,10 @@ public:
 // PlayerScript — Login/Logout, Item Acquisition
 // ============================================================================
 
-class AbyssalStoragePlayerScript : public PlayerScript
+class AbyssalStoragePlusPlayerScript : public PlayerScript
 {
 public:
-    AbyssalStoragePlayerScript() : PlayerScript("AbyssalStoragePlayerScript", {
+    AbyssalStoragePlusPlayerScript() : PlayerScript("AbyssalStoragePlusPlayerScript", {
         PLAYERHOOK_ON_LOGIN,
         PLAYERHOOK_ON_LOGOUT,
         PLAYERHOOK_ON_UPDATE,
@@ -62,23 +62,23 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        sAbyssalStorageMgr->LoadAccountData(accountId);
-        sAbyssalStorageMgr->SendFullSync(player);
+        sAbyssalStoragePlusMgr->LoadAccountData(accountId);
+        sAbyssalStoragePlusMgr->SendFullSync(player);
     }
 
     void OnPlayerLogout(Player* player) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
@@ -95,7 +95,7 @@ public:
                     uint32 entry = item->GetEntry();
                     uint32 count = item->GetCount();
                     player->DestroyItemCount(entry, count, true);
-                    sAbyssalStorageMgr->DepositItem(accountId, entry, count);
+                    sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
                 }
             }
             data->materializedItems.clear();
@@ -104,15 +104,15 @@ public:
         // Check if any other character on this account is online
         // For simplicity, always unload — LoadAccountData will re-cache on next login
         // A more efficient approach would reference-count, but this is safe
-        sAbyssalStorageMgr->UnloadAccountData(accountId);
+        sAbyssalStoragePlusMgr->UnloadAccountData(accountId);
     }
 
     void OnPlayerStoreNewItem(Player* player, Item* item, uint32 count) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled() || !player || !item)
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !item)
             return;
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
@@ -128,7 +128,7 @@ public:
             return;
 
         ItemTemplate const* itemTemplate = item->GetTemplate();
-        if (!sAbyssalStorageMgr->ShouldAutoStore(player, itemTemplate))
+        if (!sAbyssalStoragePlusMgr->ShouldAutoStore(player, itemTemplate))
             return;
 
         // Defer the deposit — destroying items inside this hook crashes the server
@@ -138,7 +138,7 @@ public:
 
     void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled() || !player)
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player)
             return;
 
         // Cheap early-out: only players with deferred deposits need any work
@@ -146,7 +146,7 @@ public:
         if (!data || data->pendingDeposits.empty())
             return;
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         // Move pending list out so we don't re-enter if DestroyItemCount triggers hooks
@@ -165,25 +165,25 @@ public:
 
             // Never deposit below the quest-required threshold — guards against
             // timing races where item->GetCount() or quest status was stale when queued
-            uint32 questReserved = sAbyssalStorageMgr->GetQuestReservedCount(player, dep.itemEntry);
+            uint32 questReserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, dep.itemEntry);
             if (playerHas <= questReserved)
                 continue;
             toDeposit = std::min(toDeposit, playerHas - questReserved);
 
             player->DestroyItemCount(dep.itemEntry, toDeposit, true);
-            sAbyssalStorageMgr->DepositItem(accountId, dep.itemEntry, toDeposit);
+            sAbyssalStoragePlusMgr->DepositItem(accountId, dep.itemEntry, toDeposit);
 
-            uint32 newTotal = sAbyssalStorageMgr->GetItemCount(accountId, dep.itemEntry);
-            sAbyssalStorageMgr->SendItemUpdate(player, dep.itemEntry, newTotal);
+            uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, dep.itemEntry);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, dep.itemEntry, newTotal);
         }
     }
 
     bool OnPlayerBeforeQuestComplete(Player* player, uint32 questId) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled() || !player)
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player)
             return true;
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return true;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
@@ -214,7 +214,7 @@ public:
                 continue;
 
             uint32 deficit = reqCount - playerCount;
-            uint32 vaultCount = sAbyssalStorageMgr->GetItemCount(accountId, reqItem);
+            uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, reqItem);
             if (vaultCount == 0)
                 continue;
 
@@ -224,7 +224,7 @@ public:
             InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, reqItem, toMaterialize);
             if (result != EQUIP_ERR_OK)
             {
-                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage: Not enough bag space to materialize quest items.");
+                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize quest items.");
                 continue;
             }
 
@@ -232,8 +232,8 @@ public:
             if (newItem && data)
                 data->materializedItems.insert(newItem->GetGUID().GetCounter());
 
-            sAbyssalStorageMgr->WithdrawItem(accountId, reqItem, toMaterialize);
-            sAbyssalStorageMgr->SendItemUpdate(player, reqItem, sAbyssalStorageMgr->GetItemCount(accountId, reqItem));
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, reqItem, toMaterialize);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, reqItem, sAbyssalStoragePlusMgr->GetItemCount(accountId, reqItem));
         }
 
         if (data)
@@ -247,17 +247,17 @@ public:
 // AllSpellScript — Crafting Materialization
 // ============================================================================
 
-class AbyssalStorageSpellScript : public AllSpellScript
+class AbyssalStoragePlusSpellScript : public AllSpellScript
 {
 public:
-    AbyssalStorageSpellScript() : AllSpellScript("AbyssalStorageSpellScript", {
+    AbyssalStoragePlusSpellScript() : AllSpellScript("AbyssalStoragePlusSpellScript", {
         ALLSPELLHOOK_ON_SPELL_CHECK_CAST,
         ALLSPELLHOOK_ON_CAST
     }) { }
 
     void OnSpellCheckCast(Spell* spell, bool /*strict*/, SpellCastResult& res) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
 
         if (res != SPELL_CAST_OK)
@@ -269,7 +269,7 @@ public:
 
         Player* player = caster->ToPlayer();
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         SpellInfo const* spellInfo = spell->GetSpellInfo();
@@ -306,7 +306,7 @@ public:
                 continue;
 
             uint32 deficit = reagentCount - playerHas;
-            uint32 vaultCount = sAbyssalStorageMgr->GetItemCount(accountId, reagentEntry);
+            uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry);
 
             if (vaultCount < deficit)
                 return; // not enough even with vault
@@ -333,7 +333,7 @@ public:
             {
                 data->isMaterializing = false;
                 res = SPELL_FAILED_DONT_REPORT;
-                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage: Not enough bag space to materialize crafting reagents.");
+                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize crafting reagents.");
                 return;
             }
 
@@ -341,14 +341,14 @@ public:
             if (newItem)
                 data->materializedItems.insert(newItem->GetGUID().GetCounter());
 
-            sAbyssalStorageMgr->WithdrawItem(accountId, reagentEntry, deficit);
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, reagentEntry, deficit);
         }
         data->isMaterializing = false;
     }
 
     void OnSpellCast(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
 
         if (!caster || !caster->IsPlayer())
@@ -356,7 +356,7 @@ public:
 
         Player* player = caster->ToPlayer();
 
-        if (sAbyssalStorageMgr->IsBotAccount(player))
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
@@ -387,8 +387,8 @@ public:
                 uint32 entry = item->GetEntry();
                 uint32 count = item->GetCount();
                 player->DestroyItemCount(entry, count, true);
-                sAbyssalStorageMgr->DepositItem(accountId, entry, count);
-                sAbyssalStorageMgr->SendItemUpdate(player, entry, sAbyssalStorageMgr->GetItemCount(accountId, entry));
+                sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
+                sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
             }
         }
         data->materializedItems.clear();
@@ -405,14 +405,14 @@ public:
 
 using namespace Acore::ChatCommands;
 
-class AbyssalStorageCommandScript : public CommandScript
+class AbyssalStoragePlusCommandScript : public CommandScript
 {
 public:
-    AbyssalStorageCommandScript() : CommandScript("AbyssalStorageCommandScript") { }
+    AbyssalStoragePlusCommandScript() : CommandScript("AbyssalStoragePlusCommandScript") { }
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable absCommandTable =
+        static ChatCommandTable aspCommandTable =
         {
             { "withdraw", HandleWithdrawCommand,  SEC_PLAYER, Console::No },
             { "deposit",  HandleDepositCommand,   SEC_PLAYER, Console::No },
@@ -421,15 +421,15 @@ public:
         };
         static ChatCommandTable commandTable =
         {
-            { "abs",     absCommandTable },
-            { "abyssal", absCommandTable },
+            { "asp",     aspCommandTable },
+            { "abyssal", aspCommandTable },
         };
         return commandTable;
     }
 
     static bool HandleWithdrawCommand(ChatHandler* handler, uint32 itemEntry, Optional<uint32> optCount)
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
 
         Player* player = handler->GetSession()->GetPlayer();
@@ -437,11 +437,11 @@ public:
             return false;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        uint32 vaultCount = sAbyssalStorageMgr->GetItemCount(accountId, itemEntry);
+        uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
 
         if (vaultCount == 0)
         {
-            handler->SendSysMessage("Abyssal Storage: Item not found in vault.");
+            handler->SendSysMessage("Abyssal Storage Plus: Item not found in vault.");
             return true;
         }
 
@@ -452,7 +452,7 @@ public:
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry);
         if (!itemTemplate)
         {
-            handler->SendSysMessage("Abyssal Storage: Invalid item.");
+            handler->SendSysMessage("Abyssal Storage Plus: Invalid item.");
             return true;
         }
 
@@ -472,25 +472,25 @@ public:
             InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemEntry, stackSize);
             if (result != EQUIP_ERR_OK)
             {
-                handler->SendSysMessage("Abyssal Storage: Not enough bag space.");
+                handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space.");
                 break;
             }
 
             player->StoreNewItem(dest, itemEntry, true);
-            sAbyssalStorageMgr->WithdrawItem(accountId, itemEntry, stackSize);
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, stackSize);
             remaining -= stackSize;
         }
 
         uint32 withdrawn = count - remaining;
         if (withdrawn > 0)
         {
-            uint32 newCount = sAbyssalStorageMgr->GetItemCount(accountId, itemEntry);
+            uint32 newCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
             if (newCount > 0)
-                sAbyssalStorageMgr->SendItemUpdate(player, itemEntry, newCount);
+                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newCount);
             else
-                sAbyssalStorageMgr->SendItemDelete(player, itemEntry);
+                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
 
-            handler->PSendSysMessage("Abyssal Storage: Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
+            handler->PSendSysMessage("Abyssal Storage Plus: Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
         }
 
         return true;
@@ -498,7 +498,7 @@ public:
 
     static bool HandleDepositCommand(ChatHandler* handler)
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
 
         Player* player = handler->GetSession()->GetPlayer();
@@ -521,7 +521,7 @@ public:
                     if (!item)
                         continue;
 
-                    if (sAbyssalStorageMgr->ShouldAutoStore(player, item->GetTemplate()))
+                    if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate()))
                         toDeposit[item->GetEntry()] += item->GetCount();
                 }
             }
@@ -534,7 +534,7 @@ public:
             if (!item)
                 continue;
 
-            if (sAbyssalStorageMgr->ShouldAutoStore(player, item->GetTemplate()))
+            if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate()))
                 toDeposit[item->GetEntry()] += item->GetCount();
         }
 
@@ -543,7 +543,7 @@ public:
         for (auto const& [entry, count] : toDeposit)
         {
             player->DestroyItemCount(entry, count, true);
-            sAbyssalStorageMgr->DepositItem(accountId, entry, count);
+            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
             ++depositedCount;
         }
 
@@ -551,31 +551,31 @@ public:
         if (data)
             data->autoStoreEnabled = true;
 
-        sAbyssalStorageMgr->SendFullSync(player);
-        handler->PSendSysMessage("Abyssal Storage: Deposited {} item stacks.", depositedCount);
+        sAbyssalStoragePlusMgr->SendFullSync(player);
+        handler->PSendSysMessage("Abyssal Storage Plus: Deposited {} item stacks.", depositedCount);
 
         return true;
     }
 
     static bool HandleSyncCommand(ChatHandler* handler)
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
 
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
 
-        sAbyssalStorageMgr->SendFullSync(player);
-        handler->SendSysMessage("Abyssal Storage: Sync complete.");
+        sAbyssalStoragePlusMgr->SendFullSync(player);
+        handler->SendSysMessage("Abyssal Storage Plus: Sync complete.");
         return true;
     }
 
-    // .abs craft <spellId> [count]
+    // .asp craft <spellId> [count]
     // Materializes reagents from vault and casts the crafting spell
     static bool HandleCraftCommand(ChatHandler* handler, uint32 spellId, Optional<uint32> optCount)
     {
-        if (!sAbyssalStorageMgr->IsEnabled())
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
 
         Player* player = handler->GetSession()->GetPlayer();
@@ -585,7 +585,7 @@ public:
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
         {
-            handler->SendSysMessage("Abyssal Storage: Invalid spell.");
+            handler->SendSysMessage("Abyssal Storage Plus: Invalid spell.");
             return true;
         }
 
@@ -602,7 +602,7 @@ public:
 
         if (!hasReagents)
         {
-            handler->SendSysMessage("Abyssal Storage: Spell has no reagents.");
+            handler->SendSysMessage("Abyssal Storage Plus: Spell has no reagents.");
             return true;
         }
 
@@ -630,11 +630,11 @@ public:
                 continue;
 
             uint32 playerHas = player->GetItemCount(reagentEntry);
-            uint32 vaultHas = sAbyssalStorageMgr->GetItemCount(accountId, reagentEntry);
+            uint32 vaultHas = sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry);
 
             if (playerHas + vaultHas < reagentCount)
             {
-                handler->SendSysMessage("Abyssal Storage: Not enough reagents.");
+                handler->SendSysMessage("Abyssal Storage Plus: Not enough reagents.");
                 return true;
             }
 
@@ -674,7 +674,7 @@ public:
         // Need: 1 slot per vault reagent type + 1 for the crafted product
         if (freeSlots < vaultReagentSlots + 1)
         {
-            handler->SendSysMessage("Abyssal Storage: Not enough bag space (need room for reagents + product).");
+            handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space (need room for reagents + product).");
             return true;
         }
 
@@ -701,7 +701,7 @@ public:
 
         if (maxCrafts == 0)
         {
-            handler->SendSysMessage("Abyssal Storage: Not enough reagents.");
+            handler->SendSysMessage("Abyssal Storage Plus: Not enough reagents.");
             return true;
         }
 
@@ -729,7 +729,7 @@ public:
             {
                 if (data)
                     data->isMaterializing = false;
-                handler->SendSysMessage("Abyssal Storage: Not enough bag space for reagents.");
+                handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space for reagents.");
                 return true;
             }
 
@@ -737,8 +737,8 @@ public:
             if (newItem && data)
                 data->materializedItems.insert(newItem->GetGUID().GetCounter());
 
-            sAbyssalStorageMgr->WithdrawItem(accountId, r.entry, toWithdraw);
-            sAbyssalStorageMgr->SendItemUpdate(player, r.entry, sAbyssalStorageMgr->GetItemCount(accountId, r.entry));
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, r.entry, toWithdraw);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
         }
 
         if (data)
@@ -765,8 +765,8 @@ public:
                         uint32 entry = item->GetEntry();
                         uint32 count = item->GetCount();
                         player->DestroyItemCount(entry, count, true);
-                        sAbyssalStorageMgr->DepositItem(accountId, entry, count);
-                        sAbyssalStorageMgr->SendItemUpdate(player, entry, sAbyssalStorageMgr->GetItemCount(accountId, entry));
+                        sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
+                        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
                     }
                 }
                 data->materializedItems.clear();
@@ -775,7 +775,7 @@ public:
                 data->pendingSpellId = 0;
                 data->autoStoreEnabled = true;
             }
-            handler->SendSysMessage("Abyssal Storage: Recipe could not be cast; materials returned.");
+            handler->SendSysMessage("Abyssal Storage Plus: Recipe could not be cast; materials returned.");
         }
 
         return true;
@@ -786,10 +786,10 @@ public:
 // Registration
 // ============================================================================
 
-void AddSC_abyssal_storage_scripts()
+void AddSC_abyssal_storage_plus_scripts()
 {
-    new AbyssalStorageWorldScript();
-    new AbyssalStoragePlayerScript();
-    new AbyssalStorageSpellScript();
-    new AbyssalStorageCommandScript();
+    new AbyssalStoragePlusWorldScript();
+    new AbyssalStoragePlusPlayerScript();
+    new AbyssalStoragePlusSpellScript();
+    new AbyssalStoragePlusCommandScript();
 }

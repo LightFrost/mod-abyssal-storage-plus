@@ -1,4 +1,4 @@
-# mod-abyssal-storage
+# mod-abyssal-storage-plus
 
 Account-wide interdimensional vault for trade goods in AzerothCore (WoW 3.3.5).
 
@@ -19,38 +19,38 @@ Automatically deposits trade goods into a shared vault accessible by all charact
 
 - Right-clicking the backpack icon
 - Left-click the minimap icon (drag it to reposition)
-- Type `/abs`
+- Type `/asp`
 - Press Open All Bags Keybind (default `Shift-B`); the vault opens alongside your bags
 
 ## Depositing Materials
 - Items should automatically get deposited on pickup
 - Click "Deposit All" in the abyssal storage interface
 - Right-click the minimap icon to Deposit All
-- Deposit All is available under **Key Bindings > AddOns > Abyssal Storage**. New installs default to `Ctrl-B` if that key is unbound. 
+- Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**. New installs default to `Ctrl-B` if that key is unbound. 
 
-<img width="692" height="641" alt="mod-abyssal-storage" src="https://github.com/user-attachments/assets/803f2527-a286-4335-9ad9-487205ae8392" />
+<img width="692" height="641" alt="mod-abyssal-storage-plus" src="https://github.com/user-attachments/assets/803f2527-a286-4335-9ad9-487205ae8392" />
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `/abs` | Toggle the vault UI |
-| `/abs deposit` | Deposit all trade goods from inventory |
-| `/abs withdraw <itemId> [count]` | Withdraw items (omit count for all) |
-| `/abs sync` | Force re-sync from server |
+| `/asp` | Toggle the vault UI |
+| `/asp deposit` | Deposit all trade goods from inventory |
+| `/asp withdraw <itemId> [count]` | Withdraw items (omit count for all) |
+| `/asp sync` | Force re-sync from server |
 
 ## Configuration
 
-In `mod_abyssal_storage.conf`:
+In `mod_abyssal_storage_plus.conf`:
 
 ```
-AbyssalStorage.Enable = 1
+AbyssalStoragePlus.Enable = 1
 ```
 
 ## Installation
 
-1. Clone into `modules/mod-abyssal-storage`
+1. Clone into `modules/mod-abyssal-storage-plus`
 2. Re-run CMake and build
-3. Copy `conf/mod_abyssal_storage.conf.dist` to your server's config directory
-4. Run `data/sql/db-characters/abyssal_storage.sql` against your characters database
-5. Copy the `addon/AbyssalStorage` folder into your WoW `Interface/AddOns` directory
+3. Copy `conf/mod_abyssal_storage_plus.conf.dist` to your server's config directory
+4. Run `data/sql/db-characters/abyssal_storage_plus.sql` against your characters database
+5. Copy the `addon/AbyssalStoragePlus` folder into your WoW `Interface/AddOns` directory

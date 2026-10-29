@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: Abyssal Storage Plus
+## Notes: Interdimensional vault for trade goods
+## SavedVariables: AbyssalStoragePlusDB
+AbyssalStoragePlus.lua
+AbyssalStoragePlusUI.lua
