@@ -99,8 +99,12 @@ function AbyssalStoragePlus:Deposit()
     self:SendCommand("asp deposit")
 end
 
-function AbyssalStoragePlus:DepositItem(entry, count)
-    self:SendCommand("asp deposit " .. entry .. " " .. (count or 0))
+function AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
+    local cmd = "asp deposit " .. entry .. " " .. (count or 0)
+    if bag and slot then
+        cmd = cmd .. " " .. bag .. " " .. slot
+    end
+    self:SendCommand(cmd)
 end
 
 function AbyssalStoragePlus:RequestSync()

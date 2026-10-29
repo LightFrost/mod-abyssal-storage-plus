@@ -496,7 +496,8 @@ public:
         return true;
     }
 
-    static bool HandleDepositCommand(ChatHandler* handler, Optional<uint32> optItemEntry, Optional<uint32> optCount)
+    static bool HandleDepositCommand(ChatHandler* handler, Optional<uint32> optItemEntry, Optional<uint32> optCount,
+                                     Optional<uint32> optBag, Optional<uint32> optSlot)
     {
         if (!sAbyssalStoragePlusMgr->IsEnabled())
             return false;
@@ -533,19 +534,68 @@ public:
                 return true;
             }
 
-            uint32 count = optCount.value_or(0);
-            if (count == 0 || count > playerHas)
-                count = playerHas;
-
             uint32 questReserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, itemEntry);
             if (playerHas <= questReserved)
             {
                 handler->SendSysMessage("Abyssal Storage Plus: That item is needed for a quest.");
                 return true;
             }
+
+            uint32 count = optCount.value_or(0);
+            if (count == 0 || count > playerHas)
+                count = playerHas;
             count = std::min(count, playerHas - questReserved);
 
-            player->DestroyItemCount(itemEntry, count, true);
+            if (optBag.has_value() != optSlot.has_value())
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: Invalid bag slot.");
+                return true;
+            }
+
+            Item* exactItem = nullptr;
+            if (optBag.has_value() && optSlot.has_value())
+            {
+                uint32 bagId = *optBag;
+                uint32 slotId = *optSlot;
+                uint32 const maxBag = INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START;
+                uint32 const backpackSlots = INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START;
+
+                if (bagId > maxBag || slotId < 1 || slotId > 255 || (bagId == 0 && slotId > backpackSlots))
+                {
+                    handler->SendSysMessage("Abyssal Storage Plus: Invalid bag slot.");
+                    return true;
+                }
+
+                // Client slots are 1-based; server bag slots are 0-based
+                uint8 serverBag = INVENTORY_SLOT_BAG_0;
+                uint8 serverSlot = static_cast<uint8>(slotId - 1);
+                if (bagId == 0)
+                    serverSlot = static_cast<uint8>(INVENTORY_SLOT_ITEM_START + slotId - 1);
+                else
+                    serverBag = static_cast<uint8>(INVENTORY_SLOT_BAG_START + bagId - 1);
+
+                exactItem = player->GetItemByPos(serverBag, serverSlot);
+                if (!exactItem || exactItem->GetEntry() != itemEntry || exactItem->IsInTrade())
+                {
+                    handler->SendSysMessage("Abyssal Storage Plus: That item moved. Try again.");
+                    return true;
+                }
+
+                count = std::min(count, exactItem->GetCount());
+                if (count == 0)
+                    return true;
+            }
+
+            if (exactItem)
+            {
+                uint32 destroyCount = count;
+                player->DestroyItemCount(exactItem, destroyCount, true);
+            }
+            else
+            {
+                player->DestroyItemCount(itemEntry, count, true);
+            }
+
             sAbyssalStoragePlusMgr->DepositItem(accountId, itemEntry, count);
 
             AbyssalPlayerData* data = GetAbyssalData(player);

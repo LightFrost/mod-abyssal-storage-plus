@@ -460,11 +460,12 @@ if ContainerFrameItemButton_OnClick then
             local slot = self:GetID()
             local link = GetContainerItemLink(bag, slot)
             local itemType = link and select(6, GetItemInfo(link))
-            if itemType == "Trade Goods" or itemType == "Gem" then
+            if bag and bag >= 0 and bag <= NUM_BAG_SLOTS
+                and (itemType == "Trade Goods" or itemType == "Gem") then
                 local _, count, locked = GetContainerItemInfo(bag, slot)
                 local entry = link and AbyssalStoragePlus:EntryFromLink(link)
                 if entry and count and count > 0 and not locked then
-                    AbyssalStoragePlus:DepositItem(entry, count)
+                    AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
                     return
                 end
             end
