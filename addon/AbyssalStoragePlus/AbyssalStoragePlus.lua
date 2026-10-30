@@ -83,6 +83,20 @@ function AbyssalStoragePlus:GetItemCount(entry)
     return self.items[entry] or 0
 end
 
+-- cursor trick reuses native item sounds; skips if busy
+function AbyssalStoragePlus:PlayItemSound(entry, bag, slot)
+    if GetCursorInfo() then return end
+
+    if bag and slot then
+        PickupContainerItem(bag, slot)
+    else
+        if not GetItemInfo(entry) then return end
+        PickupItem(entry)
+    end
+
+    ClearCursor()
+end
+
 -- ============================================================================
 -- Server Communication
 -- ============================================================================
@@ -92,14 +106,17 @@ function AbyssalStoragePlus:SendCommand(cmd)
 end
 
 function AbyssalStoragePlus:Withdraw(entry, count)
+    self:PlayItemSound(entry)
     self:SendCommand("asp withdraw " .. entry .. " " .. (count or 0))
 end
 
 function AbyssalStoragePlus:Deposit()
+    self._depositAllPending = true
     self:SendCommand("asp deposit")
 end
 
 function AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
+    self:PlayItemSound(entry, bag, slot)
     local cmd = "asp deposit " .. entry .. " " .. (count or 0)
     if bag and slot then
         cmd = cmd .. " " .. bag .. " " .. slot
@@ -211,6 +228,7 @@ end
 
 local eventFrame = CreateFrame("Frame", "AbyssalStoragePlusEventFrame", UIParent)
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
@@ -218,6 +236,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
         -- arg1 = prefix ("ABYS"), arg2 = message body
         if arg1 == AbyssalStoragePlus.PREFIX then
             AbyssalStoragePlus:HandleMessage(arg2)
+        end
+    elseif event == "CHAT_MSG_SYSTEM" then
+        if AbyssalStoragePlus._depositAllPending then
+            local count = arg1 and arg1:match("Deposited (%d+) item stacks")
+            if count then
+                AbyssalStoragePlus._depositAllPending = false
+                if tonumber(count) > 0 then PlaySound("PutDownBag") end
+            end
         end
     elseif event == "PLAYER_LOGIN" then
         AbyssalStoragePlus:RequestSync()
