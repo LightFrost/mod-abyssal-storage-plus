@@ -11,9 +11,12 @@ Automatically deposits profession materials into a shared vault accessible by al
     <td background-color="#14eebf">  
 
  ![New Feature](https://img.shields.io/badge/The%20Main%20Differences%20Include-blue)  
-- A rewrite of how materials are handled in the crafting interface. Now completely integrates into the default UI instead of using an overlay, which made it difficult to see what recipes you had materials for at a glance. Basically, the interface now visually shows all your vaulted materials directly, just like if you had the materials in your bags.
+- A rewrite of how materials are handled in the crafting interface. Now completely integrates into the default UI instead of using an overlay, which made it difficult to see what recipes you had materials for at a glance. Basically, the interface now visually shows all your vaulted materials directly, just like if you had the materials in your bags.  
+**BEFORE:** <img width="194" height="57" alt="TitaniumBarOLD" src="https://github.com/user-attachments/assets/77da5ba4-5fc7-4f3f-9c20-62c6bddd1f90" />
+**AFTER:** <img width="193" height="56" alt="TitaniumBarNEW" src="https://github.com/user-attachments/assets/418054db-e2e4-4938-9705-1d466a4264db" />
+
 - Improved abyssal storage addon interface and functionality. Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions. (May get reworked later)
-- Now able to easily deposit per-material via right-click when interface is open (Deposit All was the only option before). Also added per item SFX feedback when depositing/withdrawing (same used for banks).
+- Now able to easily deposit per-material via right-click when abyssal storage interface is open (Deposit All was the only option before). Also added per item SFX feedback when depositing/withdrawing (same used for banks).
 - No longer vaults profession tools on deposit all (if I missed anything, create an issue)
 - Keybinds + Minimap icon allowing easier depositing/withdrawing
 - If you use playerbots fork, automatically checks for and skips rndbots, significantly reducing unnecessary database queries. Altbots still included. 
@@ -22,7 +25,6 @@ Automatically deposits profession materials into a shared vault accessible by al
     </td>
   </tr>
 </table>
-
 
 ## Features
 - **Auto-deposit**: Profession materials are automatically vaulted when picked up
@@ -51,7 +53,10 @@ Automatically deposits profession materials into a shared vault accessible by al
 - Right-click a stored material in the vault to withdraw the full stored amount
 - Shift-left-click a stored material to withdraw a specific amount
 
-<img width="692" height="641" alt="mod-abyssal-storage-plus" src="https://github.com/user-attachments/assets/803f2527-a286-4335-9ad9-487205ae8392" />
+## Abyssal Storage Plus Interface
+ ### BLIZZARD <img width="1449" height="713" alt="BlizzardUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/7f448223-55c3-44e0-a718-aa4182c56402" />
+
+ ### ELVUI <img width="1585" height="562" alt="ElvUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/a4ab7cc7-a714-456e-953e-f5e778235514" />
 
 ## Commands
 | Command | Description |
