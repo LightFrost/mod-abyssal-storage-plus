@@ -47,7 +47,8 @@ Automatically deposits profession materials into a shared vault accessible by al
 - Click "Deposit All" in the abyssal storage interface
 - <kbd>**NEW**</kbd> Right-click a material in your bags while the vault is open
 - <kbd>**NEW**</kbd> Right-click the addon's minimap icon to Deposit All
-- <kbd>**NEW**</kbd> Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**. New installs default to `Ctrl-B` if that key is unbound. 
+- <kbd>**NEW**</kbd> Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**. 
+   - New installs default to `Ctrl-B` if that key is unbound. 
 
 ## Withdrawing Materials
 - Right-click a stored material in the vault to withdraw the full stored amount
