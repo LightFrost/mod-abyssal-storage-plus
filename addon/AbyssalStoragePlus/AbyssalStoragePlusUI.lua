@@ -13,7 +13,19 @@ local HEADER_HEIGHT = 32
 local SCROLL_WIDTH = 16
 local SCROLL_OUTSET = 19
 
+local BANK_FRAME_WIDTH = 720
+local BANK_FRAME_HEIGHT = 540
+local BANK_SIDEBAR_WIDTH = 170
+local BANK_ROW_HEIGHT = 40
+local BANK_HEADER_HEIGHT = 30
+local BANK_SECTION_GAP = 6
+local BANK_VIEWPORT_HEIGHT = BANK_FRAME_HEIGHT - HEADER_HEIGHT - 24
+
+local VIEW_MODE_BANK = "bank"
+local VIEW_MODE_CLASSIC = "classic"
+
 AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
+AbyssalStoragePlusDB.viewMode = AbyssalStoragePlusDB.viewMode or VIEW_MODE_BANK
 
 -- ============================================================================
 -- Sorted/Filtered Item List
@@ -46,6 +58,63 @@ local function GetItemCategory(itemType, itemSubType)
     if itemSubType == "Herb" then return "Herbs" end
     if itemSubType == "Elemental" then return "Elemental" end
     if itemSubType == "Enchanting" then return "Enchanting" end
+    return "Other"
+end
+
+local PROFESSION_ORDER = {
+    "Alchemy",
+    "Blacksmithing",
+    "Cooking",
+    "Enchanting",
+    "Engineering",
+    "Inscription",
+    "Jewelcrafting",
+    "Leatherworking",
+    "Tailoring",
+    "Other",
+}
+
+local PROFESSION_ICONS = {
+    All = "Interface\\Icons\\INV_Misc_Bag_10",
+    Alchemy = "Interface\\Icons\\Trade_Alchemy",
+    Blacksmithing = "Interface\\Icons\\Trade_BlackSmithing",
+    Cooking = "Interface\\Icons\\INV_Misc_Food_15",
+    Enchanting = "Interface\\Icons\\Trade_Engraving",
+    Engineering = "Interface\\Icons\\Trade_Engineering",
+    Inscription = "Interface\\Icons\\INV_Inscription_Tradeskill01",
+    Jewelcrafting = "Interface\\Icons\\INV_Misc_Gem_01",
+    Leatherworking = "Interface\\Icons\\INV_Misc_ArmorKit_17",
+    Tailoring = "Interface\\Icons\\Trade_Tailoring",
+    Other = "Interface\\Icons\\INV_Misc_Urn_01",
+}
+
+local function GetProfessionCategory(itemType, itemSubType, itemName)
+    if itemType == "Gem" then return "Jewelcrafting" end
+    if itemType ~= "Trade Goods" then return "Other" end
+
+    itemSubType = itemSubType or ""
+    if itemSubType == "Cloth" then return "Tailoring" end
+    if itemSubType == "Leather" then return "Leatherworking" end
+    if itemSubType == "Metal & Stone" then return "Blacksmithing" end
+    if itemSubType == "Herb" or itemSubType == "Elemental" then return "Alchemy" end
+    if itemSubType == "Enchanting" then return "Enchanting" end
+    if itemSubType == "Jewelcrafting" then return "Jewelcrafting" end
+    if itemSubType == "Cooking" or itemSubType == "Meat" then return "Cooking" end
+    if itemSubType == "Parts" or itemSubType == "Explosives" or itemSubType == "Devices" then
+        return "Engineering"
+    end
+    if itemSubType == "Armor Enchantment" or itemSubType == "Weapon Enchantment"
+        or itemSubType == "Armor Vellum" or itemSubType == "Weapon Vellum" then
+        return "Enchanting"
+    end
+    if itemName then
+        local lowerName = itemName:lower()
+        if lowerName:find("vellum", 1, true) then return "Enchanting" end
+        if lowerName:find("pigment", 1, true) or lowerName:find("parchment", 1, true)
+            or lowerName:find("%f[%a]ink%f[%A]") then
+            return "Inscription"
+        end
+    end
     return "Other"
 end
 
@@ -115,12 +184,23 @@ closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
 closeBtn:SetFrameStrata("MEDIUM")
 
 -- ============================================================================
+-- View Containers
+-- ============================================================================
+
+local classicView = CreateFrame("Frame", nil, frame)
+classicView:SetAllPoints(frame)
+
+local bankView = CreateFrame("Frame", nil, frame)
+bankView:SetAllPoints(frame)
+bankView:Hide()
+
+-- ============================================================================
 -- Search Bar
 -- ============================================================================
 
-local searchBox = CreateFrame("EditBox", "AbyssalStoragePlusSearchBox", frame)
+local searchBox = CreateFrame("EditBox", "AbyssalStoragePlusSearchBox", classicView)
 searchBox:SetSize(SEARCH_WIDTH, SEARCH_HEIGHT)
-searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING + 52, -(HEADER_HEIGHT + 12))
+searchBox:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -(HEADER_HEIGHT + 12))
 searchBox:SetFrameStrata("MEDIUM")
 searchBox:SetAutoFocus(false)
 searchBox:SetMaxLetters(64)
@@ -141,7 +221,7 @@ end)
 
 local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 searchPlaceholder:SetPoint("TOPLEFT", searchBox, "TOPLEFT", 8, -6)
-searchPlaceholder:SetText("Search items...")
+searchPlaceholder:SetText("Search Materials...")
 searchPlaceholder:SetTextColor(0.45, 0.45, 0.45)
 
 searchBox:SetScript("OnTextChanged", function(self)
@@ -166,7 +246,7 @@ searchBox:SetScript("OnEscapePressed", function(self)
 end)
 
 -- Deposit All button
-local depositBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+local depositBtn = CreateFrame("Button", nil, classicView, "UIPanelButtonTemplate")
 depositBtn:SetSize(90, SEARCH_HEIGHT)
 depositBtn:SetPoint("LEFT", searchBox, "RIGHT", 8, 0)
 depositBtn:SetFrameStrata("MEDIUM")
@@ -182,18 +262,13 @@ depositBtn:SetScript("OnClick", function()
     AbyssalStoragePlus:Deposit()
 end)
 
-local searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-searchLabel:SetPoint("RIGHT", searchBox, "LEFT", -4, 0)
-searchLabel:SetText("Search:")
-searchLabel:SetTextColor(1, 0.85, 0)
-
 -- Category filters, matching ReagentBankUI's category-first workflow.
 local categoryButtons = {}
 local categoryButtonWidth = 114
 local categoryButtonHeight = 22
 local categoryButtonGap = 6
 for index, categoryName in ipairs(CATEGORY_ORDER) do
-    local categoryButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    local categoryButton = CreateFrame("Button", nil, classicView, "UIPanelButtonTemplate")
     local categoryIndex = index - 1
     local categoryColumn = categoryIndex % 4
     local categoryRow = math.floor(categoryIndex / 4)
@@ -218,13 +293,13 @@ end
 -- ============================================================================
 
 local gridTop = HEADER_HEIGHT + 128
-local gridArea = CreateFrame("Frame", nil, frame)
+local gridArea = CreateFrame("Frame", nil, classicView)
 gridArea:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -gridTop)
 gridArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + SCROLL_WIDTH), FRAME_PADDING)
 gridArea:SetFrameStrata("MEDIUM")
 
 -- Scroll bar (plain Slider, no template)
-local scrollBar = CreateFrame("Slider", "AbyssalStoragePlusScrollBar", frame)
+local scrollBar = CreateFrame("Slider", "AbyssalStoragePlusScrollBar", classicView)
 scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, -(gridTop + 16))
 scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -(FRAME_PADDING + 2) + SCROLL_OUTSET, FRAME_PADDING + 16)
 scrollBar:SetWidth(SCROLL_WIDTH)
@@ -256,7 +331,9 @@ local function ScrollBy(delta)
 end
 
 local function HandleMouseWheel(_, delta)
-    ScrollBy(delta)
+    if AbyssalStoragePlusDB.viewMode == VIEW_MODE_CLASSIC then
+        ScrollBy(delta)
+    end
 end
 
 frame:EnableMouseWheel(true)
@@ -272,13 +349,9 @@ scrollBar:SetScript("OnMouseWheel", HandleMouseWheel)
 
 local cells = {}
 
-local function CreateCell(index)
-    local row = math.floor((index - 1) / ITEMS_PER_ROW)
-    local col = (index - 1) % ITEMS_PER_ROW
-
-    local cell = CreateFrame("Button", "AbyssalStoragePlusCell" .. index, gridArea)
+local function CreateItemCell(parent, name)
+    local cell = CreateFrame("Button", name, parent)
     cell:SetSize(CELL_SIZE, CELL_SIZE)
-    cell:SetPoint("TOPLEFT", gridArea, "TOPLEFT", col * (CELL_SIZE + CELL_SPACING), -row * (CELL_SIZE + CELL_SPACING))
     cell:SetFrameStrata("MEDIUM")
 
     -- Icon
@@ -358,7 +431,11 @@ end
 
 -- Pre-create cells for visible area
 for i = 1, ITEMS_PER_ROW * VISIBLE_ROWS do
-    cells[i] = CreateCell(i)
+    local cell = CreateItemCell(gridArea, "AbyssalStoragePlusCell" .. i)
+    local row = math.floor((i - 1) / ITEMS_PER_ROW)
+    local col = (i - 1) % ITEMS_PER_ROW
+    cell:SetPoint("TOPLEFT", gridArea, "TOPLEFT", col * (CELL_SIZE + CELL_SPACING), -row * (CELL_SIZE + CELL_SPACING))
+    cells[i] = cell
 end
 
 -- ============================================================================
@@ -391,43 +468,600 @@ function AbyssalStoragePlus:UpdateGrid()
     end
 end
 
+-- ============================================================================
+-- Bank View (profession sections)
+-- ============================================================================
+
+local bankSearchFilter = ""
+local bankLastSearchFilter = ""
+local bankSelectedProfession = "All"
+local bankRows = {}
+local bankSectionOffsets = {}
+local bankContentHeight = 0
+local bankProfessionButtons = {}
+local bankRowPool = {}
+
+local bankSidebar = CreateFrame("Frame", nil, bankView)
+bankSidebar:SetPoint("TOPLEFT", bankView, "TOPLEFT", 0, -HEADER_HEIGHT)
+bankSidebar:SetPoint("BOTTOMLEFT", bankView, "BOTTOMLEFT", 0, 0)
+bankSidebar:SetWidth(BANK_SIDEBAR_WIDTH)
+
+local bankSidebarBg = bankSidebar:CreateTexture(nil, "BACKGROUND")
+bankSidebarBg:SetAllPoints()
+bankSidebarBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+bankSidebarBg:SetVertexColor(0.05, 0.05, 0.05, 0.85)
+
+local bankDivider = bankSidebar:CreateTexture(nil, "ARTWORK")
+bankDivider:SetTexture("Interface\\Buttons\\WHITE8X8")
+bankDivider:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+bankDivider:SetWidth(1)
+bankDivider:SetPoint("TOPRIGHT", bankSidebar, "TOPRIGHT", 0, 0)
+bankDivider:SetPoint("BOTTOMRIGHT", bankSidebar, "BOTTOMRIGHT", 0, 0)
+
+local bankSearchBox = CreateFrame("EditBox", nil, bankSidebar)
+bankSearchBox:SetSize(BANK_SIDEBAR_WIDTH - 24, 22)
+bankSearchBox:SetPoint("TOPLEFT", bankSidebar, "TOPLEFT", 12, -12)
+bankSearchBox:SetFrameStrata("MEDIUM")
+bankSearchBox:SetAutoFocus(false)
+bankSearchBox:SetMaxLetters(64)
+bankSearchBox:SetFontObject(GameFontHighlightSmall)
+bankSearchBox:SetTextInsets(6, 6, 5, 5)
+bankSearchBox:SetTextColor(0.9, 0.9, 0.9)
+bankSearchBox:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    edgeSize = 1,
+})
+bankSearchBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
+bankSearchBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+bankSearchBox:EnableMouse(true)
+bankSearchBox:SetScript("OnMouseDown", function(self)
+    self:SetFocus()
+end)
+
+local bankSearchPlaceholder = bankSearchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+bankSearchPlaceholder:SetPoint("TOPLEFT", bankSearchBox, "TOPLEFT", 6, -5)
+bankSearchPlaceholder:SetText("Search Materials...")
+bankSearchPlaceholder:SetTextColor(0.45, 0.45, 0.45)
+
+bankSearchBox:SetScript("OnTextChanged", function(self)
+    bankSearchFilter = self:GetText() or ""
+    if bankSearchFilter == "" then
+        bankSearchPlaceholder:Show()
+    else
+        bankSearchPlaceholder:Hide()
+    end
+    AbyssalStoragePlus:UpdateUI()
+end)
+bankSearchBox:SetScript("OnEditFocusGained", function()
+    bankSearchPlaceholder:Hide()
+end)
+bankSearchBox:SetScript("OnEditFocusLost", function(self)
+    if (self:GetText() or "") == "" then
+        bankSearchPlaceholder:Show()
+    end
+end)
+bankSearchBox:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
+
+local bankDepositBtn = CreateFrame("Button", nil, bankSidebar, "UIPanelButtonTemplate")
+bankDepositBtn:SetSize(BANK_SIDEBAR_WIDTH - 24, 22)
+bankDepositBtn:SetPoint("TOPLEFT", bankSearchBox, "BOTTOMLEFT", 0, -8)
+bankDepositBtn:SetFrameStrata("MEDIUM")
+bankDepositBtn:SetText("Deposit All")
+bankDepositBtn:SetNormalTexture("Interface\\Buttons\\WHITE8X8")
+bankDepositBtn:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
+bankDepositBtn:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
+bankDepositBtn:GetNormalTexture():SetVertexColor(0.12, 0.12, 0.12, 0.9)
+bankDepositBtn:GetPushedTexture():SetVertexColor(0.18, 0.18, 0.18, 1)
+bankDepositBtn:GetHighlightTexture():SetVertexColor(0.25, 0.25, 0.25, 0.9)
+bankDepositBtn:GetFontString():SetTextColor(1, 0.85, 0)
+bankDepositBtn:SetScript("OnClick", function()
+    AbyssalStoragePlus:Deposit()
+end)
+
+local bankCountText = bankSidebar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+bankCountText:SetPoint("BOTTOMLEFT", bankSidebar, "BOTTOMLEFT", 12, 10)
+bankCountText:SetTextColor(1, 0.85, 0)
+bankCountText:SetText("0 items")
+
+local bankProfessionListTop = -(12 + 22 + 8 + 22 + 12)
+local bankProfessionRowHeight = 24
+local bankProfessionRowGap = 1
+
+local function CreateProfessionButton(key, label, index)
+    local btn = CreateFrame("Button", nil, bankSidebar)
+    btn:SetSize(BANK_SIDEBAR_WIDTH - 24, bankProfessionRowHeight)
+    btn:SetPoint("TOPLEFT", bankSidebar, "TOPLEFT", 12, bankProfessionListTop - index * (bankProfessionRowHeight + bankProfessionRowGap))
+    btn:SetFrameStrata("MEDIUM")
+    btn:RegisterForClicks("LeftButtonUp")
+
+    btn.selBg = btn:CreateTexture(nil, "BACKGROUND")
+    btn.selBg:SetAllPoints()
+    btn.selBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    btn.selBg:SetVertexColor(0.55, 0.40, 0.10, 0.55)
+    btn.selBg:Hide()
+
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetSize(18, 18)
+    btn.icon:SetPoint("LEFT", btn, "LEFT", 2, 0)
+    btn.icon:SetTexture(PROFESSION_ICONS[key] or "Interface\\Icons\\INV_Misc_QuestionMark")
+    btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 6, 0)
+    btn.label:SetText(label)
+
+    btn.count = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.count:SetPoint("RIGHT", btn, "RIGHT", -4, 0)
+
+    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
+    highlight:SetVertexColor(0.25, 0.25, 0.25, 0.35)
+
+    btn:SetScript("OnClick", function()
+        AbyssalStoragePlus:JumpToProfession(key)
+    end)
+
+    bankProfessionButtons[key] = btn
+    return btn
+end
+
+CreateProfessionButton("All", "All", 0)
+for index, profession in ipairs(PROFESSION_ORDER) do
+    CreateProfessionButton(profession, profession, index)
+end
+
+local bankMain = CreateFrame("Frame", nil, bankView)
+bankMain:SetPoint("TOPLEFT", bankSidebar, "TOPRIGHT", 1, 0)
+bankMain:SetPoint("BOTTOMRIGHT", bankView, "BOTTOMRIGHT", 0, 0)
+
+local bankScroll = CreateFrame("ScrollFrame", nil, bankMain)
+bankScroll:SetPoint("TOPLEFT", bankMain, "TOPLEFT", 12, -12)
+bankScroll:SetPoint("BOTTOMRIGHT", bankMain, "BOTTOMRIGHT", -(12 + SCROLL_WIDTH + 6), 12)
+bankScroll:EnableMouseWheel(true)
+
+local bankContent = CreateFrame("Frame", nil, bankScroll)
+bankContent:SetSize(ITEMS_PER_ROW * (CELL_SIZE + CELL_SPACING) - CELL_SPACING, 1)
+bankContent:EnableMouseWheel(true)
+bankScroll:SetScrollChild(bankContent)
+
+local bankSlider = CreateFrame("Slider", nil, bankMain)
+bankSlider:SetPoint("TOPRIGHT", bankMain, "TOPRIGHT", -6, -12)
+bankSlider:SetPoint("BOTTOMRIGHT", bankMain, "BOTTOMRIGHT", -6, 12)
+bankSlider:SetWidth(SCROLL_WIDTH)
+bankSlider:SetFrameStrata("MEDIUM")
+bankSlider:SetMinMaxValues(0, 0)
+bankSlider:SetValueStep(1)
+bankSlider:SetValue(0)
+bankSlider:SetOrientation("VERTICAL")
+
+local bankScrollBg = bankSlider:CreateTexture(nil, "BACKGROUND")
+bankScrollBg:SetAllPoints()
+bankScrollBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+bankScrollBg:SetVertexColor(0, 0, 0, 0.3)
+
+local bankScrollThumb = bankSlider:CreateTexture(nil, "OVERLAY")
+bankScrollThumb:SetTexture("Interface\\Buttons\\WHITE8X8")
+bankScrollThumb:SetVertexColor(1, 0.85, 0, 0.75)
+bankScrollThumb:SetSize(SCROLL_WIDTH, 24)
+bankSlider:SetThumbTexture(bankScrollThumb)
+
+local LayoutBankRows
+local bankScrollTarget = 0
+local bankScrollPos = 0
+local bankScrollAnimating = false
+
+local bankScrollAnimFrame = CreateFrame("Frame", nil, bankMain)
+bankScrollAnimFrame:Hide()
+
+local function StopBankScrollAnim()
+    if bankScrollAnimating then
+        bankScrollAnimating = false
+        bankScrollAnimFrame:Hide()
+    end
+    bankScrollTarget = bankScrollPos
+end
+
+local function SetBankScroll(value)
+    bankScrollPos = value
+    bankScroll:SetVerticalScroll(value)
+end
+
+bankSlider:SetScript("OnValueChanged", function(self, value)
+    if bankScrollAnimating then return end
+    bankScrollTarget = value
+    SetBankScroll(value)
+    if LayoutBankRows then LayoutBankRows() end
+end)
+
+bankSlider:SetScript("OnMouseDown", function()
+    StopBankScrollAnim()
+end)
+
+bankScrollAnimFrame:SetScript("OnUpdate", function(self, elapsed)
+    local diff = bankScrollTarget - bankScrollPos
+    if math.abs(diff) < 0.5 then
+        SetBankScroll(bankScrollTarget)
+        bankScrollAnimating = false
+        bankSlider:SetValue(bankScrollTarget)
+        if LayoutBankRows then LayoutBankRows() end
+        self:Hide()
+        return
+    end
+    local step = diff * math.min(1, elapsed * 14)
+    if math.abs(step) < 1 then step = diff end
+    SetBankScroll(bankScrollPos + step)
+    bankSlider:SetValue(bankScrollPos)
+    if LayoutBankRows then LayoutBankRows() end
+end)
+
+local function BankScrollBy(delta)
+    local minValue, maxValue = bankSlider:GetMinMaxValues()
+    local base = bankScrollAnimating and bankScrollTarget or bankScrollPos
+    bankScrollTarget = math.max(minValue, math.min(maxValue, base - delta * BANK_ROW_HEIGHT))
+    if not bankScrollAnimating and bankScrollTarget ~= bankScrollPos then
+        bankScrollAnimating = true
+        bankScrollAnimFrame:Show()
+    end
+end
+
+bankMain:EnableMouseWheel(true)
+bankMain:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+bankScroll:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+bankContent:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+bankSlider:EnableMouseWheel(true)
+bankSlider:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+
+local function CreateBankRow()
+    local row = CreateFrame("Frame", nil, bankContent)
+    row:SetSize(ITEMS_PER_ROW * (CELL_SIZE + CELL_SPACING) - CELL_SPACING, BANK_ROW_HEIGHT)
+    row:EnableMouseWheel(true)
+    row:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+
+    row.header = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.header:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    row.header:SetTextColor(1, 0.85, 0)
+
+    row.headerLine = row:CreateTexture(nil, "ARTWORK")
+    row.headerLine:SetTexture("Interface\\Buttons\\WHITE8X8")
+    row.headerLine:SetVertexColor(0.35, 0.35, 0.35, 0.6)
+    row.headerLine:SetHeight(1)
+    row.headerLine:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -20)
+    row.headerLine:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -20)
+
+    row.cells = {}
+    for i = 1, ITEMS_PER_ROW do
+        local cell = CreateItemCell(row, nil)
+        cell:SetPoint("TOPLEFT", row, "TOPLEFT", (i - 1) * (CELL_SIZE + CELL_SPACING), 0)
+        cell:EnableMouseWheel(true)
+        cell:SetScript("OnMouseWheel", function(_, delta) BankScrollBy(delta) end)
+        row.cells[i] = cell
+    end
+
+    row:Hide()
+    return row
+end
+
+local function BuildBankData()
+    local professionCounts = {}
+    local totalUnique = 0
+    local sectionItems = {}
+    for _, profession in ipairs(PROFESSION_ORDER) do
+        sectionItems[profession] = {}
+    end
+
+    local search = bankSearchFilter:lower()
+    for entry, count in pairs(AbyssalStoragePlus.items) do
+        totalUnique = totalUnique + 1
+        local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
+        local profession = GetProfessionCategory(itemType, itemSubType, name)
+        professionCounts[profession] = (professionCounts[profession] or 0) + 1
+
+        local matches = search == ""
+        if not matches and name then
+            matches = name:lower():find(search, 1, true) ~= nil
+        end
+        if matches then
+            table.insert(sectionItems[profession], {
+                entry = entry,
+                count = count,
+                name = name or ("Item #" .. entry),
+                icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+            })
+        end
+    end
+
+    for _, items in pairs(sectionItems) do
+        table.sort(items, function(a, b) return a.name < b.name end)
+    end
+
+    return sectionItems, professionCounts, totalUnique
+end
+
+local function BuildBankRows(sectionItems)
+    wipe(bankRows)
+    bankSectionOffsets = {}
+    local y = 0
+
+    for _, profession in ipairs(PROFESSION_ORDER) do
+        local items = sectionItems[profession]
+        if items and #items > 0 then
+            bankSectionOffsets[profession] = y
+            table.insert(bankRows, { kind = "header", label = profession, y = y, height = BANK_HEADER_HEIGHT })
+            y = y + BANK_HEADER_HEIGHT
+
+            for i = 1, #items, ITEMS_PER_ROW do
+                local rowItems = {}
+                for j = i, math.min(i + ITEMS_PER_ROW - 1, #items) do
+                    table.insert(rowItems, items[j])
+                end
+                table.insert(bankRows, { kind = "items", items = rowItems, y = y, height = BANK_ROW_HEIGHT })
+                y = y + BANK_ROW_HEIGHT
+            end
+
+            y = y + BANK_SECTION_GAP
+        end
+    end
+
+    bankContentHeight = y
+    bankContent:SetHeight(math.max(1, y))
+end
+
+LayoutBankRows = function()
+    local viewportHeight = BANK_VIEWPORT_HEIGHT
+    local scroll = bankScrollPos
+
+    local firstVisible = #bankRows + 1
+    for i, row in ipairs(bankRows) do
+        if row.y + row.height > scroll then
+            firstVisible = i
+            break
+        end
+    end
+
+    local poolIndex = 0
+    for i = firstVisible, #bankRows do
+        local row = bankRows[i]
+        if row.y >= scroll + viewportHeight then break end
+
+        poolIndex = poolIndex + 1
+        local poolRow = bankRowPool[poolIndex]
+        if not poolRow then
+            poolRow = CreateBankRow()
+            bankRowPool[poolIndex] = poolRow
+        end
+
+        poolRow:SetHeight(row.height)
+        poolRow:ClearAllPoints()
+        poolRow:SetPoint("TOPLEFT", bankContent, "TOPLEFT", 0, -row.y)
+
+        if row.kind == "header" then
+            poolRow.header:SetText(row.label)
+            poolRow.header:Show()
+            poolRow.headerLine:Show()
+            for _, cell in ipairs(poolRow.cells) do
+                cell:Hide()
+            end
+        else
+            poolRow.header:Hide()
+            poolRow.headerLine:Hide()
+            for j, cell in ipairs(poolRow.cells) do
+                local data = row.items[j]
+                if data then
+                    cell.icon:SetTexture(data.icon)
+                    cell.countText:SetText(data.count > 1 and data.count or "")
+                    cell.itemEntry = data.entry
+                    cell.itemCount = data.count
+                    cell:Show()
+                else
+                    cell.icon:SetTexture(nil)
+                    cell.countText:SetText("")
+                    cell.itemEntry = nil
+                    cell.itemCount = nil
+                    cell:Hide()
+                end
+            end
+        end
+
+        poolRow:Show()
+    end
+
+    for i = poolIndex + 1, #bankRowPool do
+        bankRowPool[i]:Hide()
+    end
+end
+
+function AbyssalStoragePlus:UpdateBankView()
+    local sectionItems, professionCounts, totalUnique = BuildBankData()
+    BuildBankRows(sectionItems)
+
+    local viewportHeight = BANK_VIEWPORT_HEIGHT
+    local maxScroll = math.max(0, bankContentHeight - viewportHeight)
+    bankSlider:SetMinMaxValues(0, maxScroll)
+    if bankLastSearchFilter ~= bankSearchFilter then
+        bankLastSearchFilter = bankSearchFilter
+        StopBankScrollAnim()
+        bankScrollPos = 0
+        bankScrollTarget = 0
+        bankSlider:SetValue(0)
+    elseif bankScrollTarget > maxScroll or bankScrollPos > maxScroll then
+        StopBankScrollAnim()
+        bankScrollPos = maxScroll
+        bankScrollTarget = maxScroll
+        bankSlider:SetValue(maxScroll)
+    end
+    if maxScroll > 0 then
+        bankSlider:Show()
+    else
+        bankSlider:Hide()
+    end
+
+    LayoutBankRows()
+    bankCountText:SetText(totalUnique .. " items")
+
+    for key, btn in pairs(bankProfessionButtons) do
+        local count = key == "All" and totalUnique or (professionCounts[key] or 0)
+        btn.count:SetText(count > 0 and tostring(count) or "")
+        btn.icon:SetDesaturated(count == 0)
+
+        local selected = key == bankSelectedProfession
+        if selected then
+            btn.selBg:Show()
+        else
+            btn.selBg:Hide()
+        end
+
+        if selected then
+            btn.label:SetTextColor(1, 0.85, 0)
+        elseif count > 0 then
+            btn.label:SetTextColor(0.85, 0.85, 0.85)
+        else
+            btn.label:SetTextColor(0.4, 0.4, 0.4)
+        end
+        btn.count:SetTextColor(selected and 1 or 0.85, selected and 0.85 or 0.85, selected and 0 or 0.85)
+    end
+end
+
+function AbyssalStoragePlus:JumpToProfession(key)
+    if key ~= "All" and bankSearchFilter ~= "" and not bankSectionOffsets[key] then
+        bankSearchFilter = ""
+        bankSearchBox:SetText("")
+        bankSearchBox:ClearFocus()
+        AbyssalStoragePlus:UpdateUI()
+    end
+
+    if key ~= "All" and not bankSectionOffsets[key] then
+        return
+    end
+
+    bankSelectedProfession = key
+    AbyssalStoragePlus:UpdateUI()
+
+    local offset = 0
+    if key ~= "All" then
+        offset = bankSectionOffsets[key] or 0
+    end
+    local _, maxValue = bankSlider:GetMinMaxValues()
+    local target = math.min(offset, maxValue)
+    StopBankScrollAnim()
+    bankScrollPos = target
+    bankScrollTarget = target
+    bankSlider:SetValue(target)
+end
+
 function AbyssalStoragePlus:UpdateUI()
     if AbyssalStoragePlus.RefreshTradeSkill then
         AbyssalStoragePlus:RefreshTradeSkill()
     end
     if not AbyssalStoragePlusFrame:IsShown() then return end
 
-    BuildDisplayList()
+    if AbyssalStoragePlusDB.viewMode == VIEW_MODE_CLASSIC then
+        BuildDisplayList()
 
-    for categoryName, categoryButton in pairs(categoryButtons) do
-        local active = categoryName == selectedCategory
-        categoryButton:GetNormalTexture():SetVertexColor(active and 0.55 or 0.12, active and 0.40 or 0.12, active and 0.10 or 0.12, 0.95)
-        categoryButton:GetFontString():SetTextColor(active and 1 or 0.85, active and 0.85 or 0.85, active and 0.35 or 0.85)
-    end
+        for categoryName, categoryButton in pairs(categoryButtons) do
+            local active = categoryName == selectedCategory
+            categoryButton:GetNormalTexture():SetVertexColor(active and 0.55 or 0.12, active and 0.40 or 0.12, active and 0.10 or 0.12, 0.95)
+            categoryButton:GetFontString():SetTextColor(active and 1 or 0.85, active and 0.85 or 0.85, active and 0.35 or 0.85)
+        end
 
-    local totalRows = math.ceil(#displayList / ITEMS_PER_ROW)
-    local maxScroll = math.max(0, totalRows - VISIBLE_ROWS)
-    scrollBar:SetMinMaxValues(0, maxScroll)
+        local totalRows = math.ceil(#displayList / ITEMS_PER_ROW)
+        local maxScroll = math.max(0, totalRows - VISIBLE_ROWS)
+        scrollBar:SetMinMaxValues(0, maxScroll)
 
-    -- Clamp scroll position so it doesn't point beyond the display list
-    if scrollBar:GetValue() > maxScroll then
-        scrollBar:SetValue(maxScroll)
-    end
-    if maxScroll > 0 then
-        scrollBar:Show()
+        -- Clamp scroll position so it doesn't point beyond the display list
+        if scrollBar:GetValue() > maxScroll then
+            scrollBar:SetValue(maxScroll)
+        end
+        if maxScroll > 0 then
+            scrollBar:Show()
+        else
+            scrollBar:Hide()
+        end
+
+        -- Item count display
+        if not classicView.itemCountText then
+            classicView.itemCountText = classicView:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
+            classicView.itemCountText:SetPoint("LEFT", depositBtn, "RIGHT", 10, 0)
+        end
+        classicView.itemCountText:SetText(#displayList .. " items")
+
+        self:UpdateGrid()
     else
-        scrollBar:Hide()
+        self:UpdateBankView()
     end
-
-    -- Item count display
-    if not frame.itemCountText then
-        frame.itemCountText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-        frame.itemCountText:SetPoint("LEFT", depositBtn, "RIGHT", 10, 0)
-    end
-    frame.itemCountText:SetText(#displayList .. " items")
-
-    self:UpdateGrid()
 end
+
+-- ============================================================================
+-- View Toggle
+-- ============================================================================
+
+local toggleBtn = CreateFrame("Button", nil, frame)
+toggleBtn:SetSize(104, 24)
+toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -4)
+toggleBtn:SetFrameStrata("MEDIUM")
+toggleBtn:RegisterForClicks("LeftButtonUp")
+
+local toggleLabel = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+toggleLabel:SetPoint("LEFT", toggleBtn, "LEFT", 0, 0)
+toggleLabel:SetTextColor(1, 0.85, 0)
+toggleLabel:SetShadowOffset(1, -1)
+
+local function ApplyViewMode()
+    local mode = AbyssalStoragePlusDB.viewMode
+    if mode ~= VIEW_MODE_CLASSIC then mode = VIEW_MODE_BANK end
+    AbyssalStoragePlusDB.viewMode = mode
+    StopBankScrollAnim()
+
+    if mode == VIEW_MODE_BANK then
+        frame:SetSize(BANK_FRAME_WIDTH, BANK_FRAME_HEIGHT)
+        searchBox:ClearFocus()
+        classicView:Hide()
+        bankView:Show()
+        toggleBtn:ClearAllPoints()
+        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -5)
+        toggleLabel:SetText("Modern")
+        toggleBtn.tooltipText = "Switch to Classic View"
+    else
+        frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
+        bankSearchBox:ClearFocus()
+        bankView:Hide()
+        classicView:Show()
+        toggleBtn:ClearAllPoints()
+        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -5)
+        toggleLabel:SetText("Classic")
+        toggleBtn.tooltipText = "Switch to Modern View"
+    end
+end
+
+function AbyssalStoragePlus:SetViewMode(mode)
+    if mode ~= VIEW_MODE_CLASSIC then mode = VIEW_MODE_BANK end
+    AbyssalStoragePlusDB.viewMode = mode
+    ApplyViewMode()
+    AbyssalStoragePlus:UpdateUI()
+end
+
+toggleBtn:SetScript("OnClick", function()
+    local nextMode = VIEW_MODE_BANK
+    if AbyssalStoragePlusDB.viewMode == VIEW_MODE_BANK then
+        nextMode = VIEW_MODE_CLASSIC
+    end
+    AbyssalStoragePlus:SetViewMode(nextMode)
+end)
+toggleBtn:SetScript("OnEnter", function(self)
+    toggleLabel:SetTextColor(1, 1, 0.65)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(self.tooltipText or "Switch view")
+    GameTooltip:Show()
+end)
+toggleBtn:SetScript("OnLeave", function()
+    toggleLabel:SetTextColor(1, 0.85, 0)
+    GameTooltip:Hide()
+end)
+
+ApplyViewMode()
 
 -- ============================================================================
 -- Show/Hide with Bags (Shift+B)
@@ -1182,6 +1816,7 @@ end
 -- ============================================================================
 
 AbyssalStoragePlusFrame:SetScript("OnShow", function(self)
+    ApplyViewMode()
     -- Slight delay to let item info queries return
     AbyssalStoragePlus.SetTimer(0.5, function()
         AbyssalStoragePlus:UpdateUI()
