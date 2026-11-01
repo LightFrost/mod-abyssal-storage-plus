@@ -1038,15 +1038,14 @@ end
 -- ============================================================================
 
 local toggleBtn = CreateFrame("Button", nil, frame)
-toggleBtn:SetSize(104, 24)
+toggleBtn:SetSize(24, 24)
 toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -4)
 toggleBtn:SetFrameStrata("MEDIUM")
 toggleBtn:RegisterForClicks("LeftButtonUp")
+toggleBtn:SetNormalTexture("Interface\\AddOns\\AbyssalStoragePlus\\SwitchIcon")
 
-local toggleLabel = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-toggleLabel:SetPoint("LEFT", toggleBtn, "LEFT", 0, 0)
-toggleLabel:SetTextColor(1, 0.85, 0)
-toggleLabel:SetShadowOffset(1, -1)
+local toggleIcon = toggleBtn:GetNormalTexture()
+if toggleIcon then toggleIcon:SetVertexColor(1, 1, 1) end
 
 local function ApplyViewMode()
     local mode = AbyssalStoragePlusDB.viewMode
@@ -1060,8 +1059,7 @@ local function ApplyViewMode()
         classicView:Hide()
         bankView:Show()
         toggleBtn:ClearAllPoints()
-        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -5)
-        toggleLabel:SetText("Modern")
+        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -4)
         toggleBtn.tooltipText = "Switch to Classic View"
     else
         frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
@@ -1069,8 +1067,7 @@ local function ApplyViewMode()
         bankView:Hide()
         classicView:Show()
         toggleBtn:ClearAllPoints()
-        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -5)
-        toggleLabel:SetText("Classic")
+        toggleBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PADDING, -4)
         toggleBtn.tooltipText = "Switch to Modern View"
     end
 end
@@ -1090,13 +1087,13 @@ toggleBtn:SetScript("OnClick", function()
     AbyssalStoragePlus:SetViewMode(nextMode)
 end)
 toggleBtn:SetScript("OnEnter", function(self)
-    toggleLabel:SetTextColor(1, 1, 0.65)
+    if toggleIcon then toggleIcon:SetVertexColor(1, 1, 0.65) end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:AddLine(self.tooltipText or "Switch view")
     GameTooltip:Show()
 end)
 toggleBtn:SetScript("OnLeave", function()
-    toggleLabel:SetTextColor(1, 0.85, 0)
+    if toggleIcon then toggleIcon:SetVertexColor(1, 1, 1) end
     GameTooltip:Hide()
 end)
 
