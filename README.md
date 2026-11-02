@@ -11,11 +11,16 @@ Automatically deposits profession materials into a shared vault accessible by al
     <td background-color="#14eebf">  
 
  ![New Feature](https://img.shields.io/badge/The%20Main%20Differences%20Include-blue)  
-- A rewrite of how materials are handled in the crafting interface. Now completely integrates into the default UI instead of using an overlay, which made it difficult to see what recipes you had materials for at a glance. Basically, the interface now visually shows all your vaulted materials directly, just like if you had the materials in your bags.  
-**BEFORE:** <img width="194" height="57" alt="TitaniumBarOLD" src="https://github.com/user-attachments/assets/77da5ba4-5fc7-4f3f-9c20-62c6bddd1f90" />
-**AFTER:** <img width="193" height="56" alt="TitaniumBarNEW" src="https://github.com/user-attachments/assets/418054db-e2e4-4938-9705-1d466a4264db" />
+- <kbd>**MAJOR UPDATE**</kbd> A rewrite of how vaulted materials are handled in the crafting interface. Now completely integrates vaulted materials into the default UI instead of using an overlay.
+  - <kbd>**OLD**</kbd> Only showed vaulted materials as an overlay if you clicked on each recipe one by one. Didn't show many of a recipe you could craft with vaulted materials, or have a working "Have Materials" filter. 
+  - <kbd>**NEW PLUS**</kbd> Now completely takes into account vaulted materials in the base blizzard UI, functions just like if you had those materials in your bags, so things like material counts, how many of a recipe you can craft and the "Have Materials" checkbox all work seamlessly with the vault.
+   
+     **BEFORE:** <img width="194" height="81" alt="TitaniumBarOLD1" src="https://github.com/user-attachments/assets/9f6fad52-d4bd-4cdb-b772-966f2233b494" />
+     **AFTER:** <img width="193" height="78" alt="TitaniumBar 9" src="https://github.com/user-attachments/assets/d61ae12a-1a1c-4502-a7a7-e10b87fb37cf" />
 
-- Improved abyssal storage addon interface and functionality. Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions. (May get reworked later)
+
+- Added a new clean **modern interface** which is the default, see screenshots below, you can switch between Modern/Classic anytime by clicking the switch icon in top-left.
+- Improved abyssal storage addon interface and functionality (Classic UI). Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions.
 - Now able to easily deposit per-material via right-click when abyssal storage interface is open (Deposit All was the only option before). Also added per item SFX feedback when depositing/withdrawing (same used for banks).
 - No longer vaults profession tools on deposit all (if I missed anything, create an issue)
 - Keybinds + Minimap icon allowing easier depositing/withdrawing
@@ -55,9 +60,16 @@ Automatically deposits profession materials into a shared vault accessible by al
 - Shift-left-click a stored material to withdraw a specific amount
 
 ## Abyssal Storage Plus Interface
- ### BLIZZARD <img width="1449" height="713" alt="BlizzardUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/7f448223-55c3-44e0-a718-aa4182c56402" />
 
- ### ELVUI <img width="1585" height="562" alt="ElvUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/a4ab7cc7-a714-456e-953e-f5e778235514" />
+### <kbd>**NEW**</kbd> Modern UI (You can Toggle Between Modern/Classic Any time by clicking the icon in the top-left)
+<img width="959" height="718" alt="Window 1586 01-11-2026 (World_of_Warcraft)" src="https://github.com/user-attachments/assets/9c404bdb-e81b-493b-a3d6-52214dce5d71" />
+
+### Blizzard Frames + Classic UI
+<img width="1449" height="713" alt="BlizzardUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/7f448223-55c3-44e0-a718-aa4182c56402" />
+
+### ElvUI Frames + Classic UI
+<img width="1583" height="562" alt="ElvUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/a9e4ff26-75f8-4f6e-9fef-4c6e6ebf54e8" />
+
 
 ## Commands
 | Command | Description |
