@@ -424,10 +424,9 @@ local function CreateItemCell(parent, name)
             GameTooltip:SetHyperlink("item:" .. self.itemEntry)
             GameTooltip:Show()
             local bags = GetItemCount and (GetItemCount(self.itemEntry, false) or 0) or 0
-            local stored = self.itemCount or 0
-            GameTooltip:AddDoubleLine("Bags", tostring(bags), 0.78, 0.82, 0.88, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Abyssal Storage Plus", tostring(stored), 0.78, 0.82, 0.88, 0.2, 1, 0.6)
-            GameTooltip:AddDoubleLine("Total", tostring(bags + stored), 1, 0.85, 0, 1, 0.85, 0)
+            if bags > 0 then
+                GameTooltip:AddDoubleLine("Bags", tostring(bags), 0.78, 0.82, 0.88, 1, 1, 1)
+            end
             GameTooltip:AddLine("Right-click: Withdraw all", 0.8, 0.8, 0.8)
             GameTooltip:AddLine("Shift-left-click: Withdraw amount", 0.8, 0.8, 0.8)
             GameTooltip:Show()
@@ -1108,6 +1107,8 @@ hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 hookFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         hooksecurefunc("OpenAllBags", function()
+            -- Auctionator opens bags on tab click; don't auto-show there
+            if AuctionFrame and AuctionFrame:IsShown() then return end
             AbyssalStoragePlusFrame:Show()
             AbyssalStoragePlus:UpdateUI()
         end)
