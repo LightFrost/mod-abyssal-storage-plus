@@ -30,6 +30,29 @@ static std::string BuildItemLink(uint32 itemEntry)
     return ss.str();
 }
 
+// Return leftover materialized (vault-withdrawn) items still in bags to the vault
+static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, uint32 accountId)
+{
+    if (!player || !data || data->materializedItems.empty())
+        return;
+
+    data->isMaterializing = true;
+    for (uint32 guid : data->materializedItems)
+    {
+        Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
+        if (item)
+        {
+            uint32 entry = item->GetEntry();
+            uint32 count = item->GetCount();
+            player->DestroyItemCount(entry, count, true);
+            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
+        }
+    }
+    data->materializedItems.clear();
+    data->isMaterializing = false;
+}
+
 // ============================================================================
 // WorldScript — Config Loading
 // ============================================================================
@@ -252,6 +275,7 @@ class AbyssalStoragePlusSpellScript : public AllSpellScript
 public:
     AbyssalStoragePlusSpellScript() : AllSpellScript("AbyssalStoragePlusSpellScript", {
         ALLSPELLHOOK_ON_SPELL_CHECK_CAST,
+        ALLSPELLHOOK_ON_CAST_CANCEL,
         ALLSPELLHOOK_ON_CAST
     }) { }
 
@@ -342,6 +366,7 @@ public:
                 data->materializedItems.insert(newItem->GetGUID().GetCounter());
 
             sAbyssalStoragePlusMgr->WithdrawItem(accountId, reagentEntry, deficit);
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, reagentEntry, sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry));
         }
         data->isMaterializing = false;
     }
@@ -378,21 +403,33 @@ public:
         uint32 accountId = player->GetSession()->GetAccountId();
 
         // Re-vault any materialized items that are still in inventory (leftovers)
-        data->isMaterializing = true;
-        for (uint32 guid : data->materializedItems)
-        {
-            Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
-            if (item)
-            {
-                uint32 entry = item->GetEntry();
-                uint32 count = item->GetCount();
-                player->DestroyItemCount(entry, count, true);
-                sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
-                sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
-            }
-        }
-        data->materializedItems.clear();
-        data->isMaterializing = false;
+        RevaultMaterializedItems(player, data, accountId);
+        data->pendingCrafts = 0;
+        data->pendingSpellId = 0;
+        data->autoStoreEnabled = true;
+    }
+
+    void OnSpellCastCancel(Spell* /*spell*/, Unit* caster, SpellInfo const* /*spellInfo*/, bool /*bySelf*/) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
+            return;
+
+        if (!caster || !caster->IsPlayer())
+            return;
+
+        Player* player = caster->ToPlayer();
+
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
+            return;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data || data->materializedItems.empty())
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Interrupted craft: return pulled reagents to the vault
+        RevaultMaterializedItems(player, data, accountId);
         data->pendingCrafts = 0;
         data->pendingSpellId = 0;
         data->autoStoreEnabled = true;

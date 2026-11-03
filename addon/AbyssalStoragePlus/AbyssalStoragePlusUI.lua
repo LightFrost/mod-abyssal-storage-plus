@@ -1211,6 +1211,8 @@ local reagentItemRetry = {}
 
 local function InvalidateTradeCache()
     tradeCache.valid = false
+    -- Bag counts change on crafts; force a fresh recount
+    wipe(tradeCache.counts)
 end
 
 local function GetVaultCountForReagent(reagentName, realIndex, reagentIndex)
