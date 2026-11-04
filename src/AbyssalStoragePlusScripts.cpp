@@ -30,24 +30,44 @@ static std::string BuildItemLink(uint32 itemEntry)
     return ss.str();
 }
 
-// Return leftover materialized (vault-withdrawn) items still in bags to the vault
+// Record a vault pull plus the bag count before it
+static void TrackMaterializedItem(AbyssalPlayerData* data, uint32 entry, uint32 baseline, uint32 amount)
+{
+    if (!data || amount == 0)
+        return;
+
+    auto it = data->materializedItems.find(entry);
+    if (it == data->materializedItems.end())
+        data->materializedItems.emplace(entry, MaterializedItem{ baseline, amount });
+    else
+        it->second.amount += amount;
+}
+
+// Return only the leftover vault-pulled items still in bags, not merged player stacks
 static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, uint32 accountId)
 {
     if (!player || !data || data->materializedItems.empty())
         return;
 
     data->isMaterializing = true;
-    for (uint32 guid : data->materializedItems)
+    for (auto const& [entry, mat] : data->materializedItems)
     {
-        Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
-        if (item)
-        {
-            uint32 entry = item->GetEntry();
-            uint32 count = item->GetCount();
-            player->DestroyItemCount(entry, count, true);
-            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
-        }
+        uint32 current = player->GetItemCount(entry);
+        if (current <= mat.baseline)
+            continue;
+
+        uint32 leftover = std::min(current - mat.baseline, mat.amount);
+        if (leftover == 0)
+            continue;
+
+        // Send invariant total before the bag packet to avoid a count flicker
+        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
+            sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
+
+        player->DestroyItemCount(entry, leftover, true);
+        sAbyssalStoragePlusMgr->DepositItem(accountId, entry, leftover);
+        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
+            sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
     }
     data->materializedItems.clear();
     data->isMaterializing = false;
@@ -124,21 +144,7 @@ public:
         AbyssalPlayerData* data = GetAbyssalData(player);
 
         // Re-vault any materialized items still in inventory
-        if (data && !data->materializedItems.empty())
-        {
-            for (uint32 guid : data->materializedItems)
-            {
-                Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
-                if (item)
-                {
-                    uint32 entry = item->GetEntry();
-                    uint32 count = item->GetCount();
-                    player->DestroyItemCount(entry, count, true);
-                    sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
-                }
-            }
-            data->materializedItems.clear();
-        }
+        RevaultMaterializedItems(player, data, accountId);
 
         // Check if any other character on this account is online
         // For simplicity, always unload — LoadAccountData will re-cache on next login
@@ -163,7 +169,7 @@ public:
             return;
 
         // Don't auto-store materialized items
-        if (data->materializedItems.count(item->GetGUID().GetCounter()))
+        if (data->materializedItems.count(item->GetEntry()))
             return;
 
         ItemTemplate const* itemTemplate = item->GetTemplate();
@@ -269,7 +275,7 @@ public:
 
             Item* newItem = player->StoreNewItem(dest, reqItem, true);
             if (newItem && data)
-                data->materializedItems.insert(newItem->GetGUID().GetCounter());
+                TrackMaterializedItem(data, reqItem, playerCount, toMaterialize);
 
             sAbyssalStoragePlusMgr->WithdrawItem(accountId, reqItem, toMaterialize);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, reqItem, sAbyssalStoragePlusMgr->GetItemCount(accountId, reqItem));
@@ -383,7 +389,7 @@ public:
 
             Item* newItem = player->StoreNewItem(dest, reagentEntry, true);
             if (newItem)
-                data->materializedItems.insert(newItem->GetGUID().GetCounter());
+                TrackMaterializedItem(data, uint32(reagentEntry), playerHas, deficit);
 
             sAbyssalStoragePlusMgr->WithdrawItem(accountId, reagentEntry, deficit);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, reagentEntry, sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry));
@@ -543,6 +549,10 @@ public:
             sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, stackSize);
             remaining -= stackSize;
         }
+
+        // Re-enable auto-store even if the withdrawal stopped early
+        if (data)
+            data->autoStoreEnabled = true;
 
         uint32 withdrawn = count - remaining;
         if (withdrawn > 0)
@@ -903,7 +913,7 @@ public:
 
             Item* newItem = player->StoreNewItem(dest, r.entry, true);
             if (newItem && data)
-                data->materializedItems.insert(newItem->GetGUID().GetCounter());
+                TrackMaterializedItem(data, r.entry, r.playerHas, toWithdraw);
 
             sAbyssalStoragePlusMgr->WithdrawItem(accountId, r.entry, toWithdraw);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
@@ -924,24 +934,7 @@ public:
             // Return withdrawn reagents if the cast is rejected
             if (data)
             {
-                data->isMaterializing = true;
-                for (uint32 guid : data->materializedItems)
-                {
-                    Item* item = player->GetItemByGuid(ObjectGuid(HighGuid::Item, guid));
-                    if (item)
-                    {
-                        uint32 entry = item->GetEntry();
-                        uint32 count = item->GetCount();
-                        // Send invariant total before bags shrink
-                        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
-                            sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
-                        player->DestroyItemCount(entry, count, true);
-                        sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
-                        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
-                    }
-                }
-                data->materializedItems.clear();
-                data->isMaterializing = false;
+                RevaultMaterializedItems(player, data, accountId);
                 data->pendingCrafts = 0;
                 data->pendingSpellId = 0;
                 data->autoStoreEnabled = true;

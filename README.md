@@ -1,18 +1,17 @@
 # mod-abyssal-storage-plus
 
-**This mod is based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**  
-If migrating from this mod, just replace the module & addon with mine. It still uses the same SQL database table name `abyssal_storage` so if you had items stored already, they will still be there.
-
----
-
 **Account-wide interdimensional vault for all profession materials in AzerothCore (WoW WotLK 3.3.5)**
 
 ### How it works
-**Storing** - Automatically deposits looted/created profession materials into a shared account-wide vault. Your vaulted materials are visible and easily managed via the included addon.
+**Storing** - Automatically deposits looted/created profession materials into a shared account-wide vault. Your vaulted materials are visible and easily managed via the included addon.  
 <br>
 **Crafting** - The profession crafting interface displays your vaulted materials seemlessly. Crafting automatically pulls required materials from the vault into your bags for that craft, Cancelling a craft returns the materials to the vault.
-
 <br>
+
+---
+
+**This mod is based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**  
+If migrating from this mod, just replace the module & addon with mine. It still uses the same SQL database table name `abyssal_storage` so if you had items stored already, they will still be there.
 
 <table>
   <tr>

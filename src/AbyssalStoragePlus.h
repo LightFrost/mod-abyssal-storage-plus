@@ -4,7 +4,6 @@
 #include "DataMap.h"
 #include "Define.h"
 #include <unordered_map>
-#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -18,12 +17,19 @@ struct PendingDeposit
     uint32 count;
 };
 
+// Tracks one vault-pulled stack; baseline is bag count before the pull
+struct MaterializedItem
+{
+    uint32 baseline = 0;
+    uint32 amount = 0;
+};
+
 // Per-player transient state stored via DataMap
 struct AbyssalPlayerData : public DataMap::Base
 {
     bool autoStoreEnabled = true;
     bool isMaterializing = false; // true while materializing items (suppress auto-deposit)
-    std::set<uint32> materializedItems; // item GUIDs currently materialized for crafting
+    std::unordered_map<uint32, MaterializedItem> materializedItems; // entry -> tracking
     std::vector<PendingDeposit> pendingDeposits; // deferred auto-deposits
     uint32 pendingCrafts = 0;    // remaining crafts in a multi-craft batch
     uint32 pendingSpellId = 0;   // spell ID for multi-craft batch
