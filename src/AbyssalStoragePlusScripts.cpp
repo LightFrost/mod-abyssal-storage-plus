@@ -270,7 +270,10 @@ public:
             if (result != EQUIP_ERR_OK)
             {
                 ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize quest items.");
-                continue;
+                // Return anything already pulled for earlier objectives
+                if (data)
+                    RevaultMaterializedItems(player, data, accountId);
+                break;
             }
 
             Item* newItem = player->StoreNewItem(dest, reqItem, true);
@@ -381,7 +384,8 @@ public:
             InventoryResult invResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, reagentEntry, deficit);
             if (invResult != EQUIP_ERR_OK)
             {
-                data->isMaterializing = false;
+                // Roll back reagents pulled for earlier slots
+                RevaultMaterializedItems(player, data, accountId);
                 res = SPELL_FAILED_DONT_REPORT;
                 ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize crafting reagents.");
                 return;
@@ -716,8 +720,16 @@ public:
         uint32 depositedCount = 0;
         for (auto const& [entry, count] : toDeposit)
         {
-            player->DestroyItemCount(entry, count, true);
-            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
+            // Never move items an active quest still needs
+            uint32 playerHas = player->GetItemCount(entry);
+            uint32 reserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, entry);
+            uint32 surplus = playerHas > reserved ? playerHas - reserved : 0;
+            uint32 toMove = std::min(count, surplus);
+            if (toMove == 0)
+                continue;
+
+            player->DestroyItemCount(entry, toMove, true);
+            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, toMove);
             ++depositedCount;
         }
 
@@ -905,8 +917,9 @@ public:
             InventoryResult invResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, r.entry, toWithdraw);
             if (invResult != EQUIP_ERR_OK)
             {
+                // Roll back reagents pulled for earlier types
                 if (data)
-                    data->isMaterializing = false;
+                    RevaultMaterializedItems(player, data, accountId);
                 handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space for reagents.");
                 return true;
             }
