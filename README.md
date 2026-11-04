@@ -1,10 +1,18 @@
 # mod-abyssal-storage-plus
 
-Account-wide interdimensional vault for all profession materials in AzerothCore (WoW WotLK 3.3.5).
+**This mod is based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**  
+If migrating from this mod, just replace the module & addon with mine. It still uses the same SQL database table name `abyssal_storage` so if you had items stored already, they will still be there.
 
-Automatically deposits profession materials into a shared vault accessible by all characters on the account. Integrates with crafting and quests so vault materials are used seamlessly.
+---
 
-**This is mod is based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**  
+**Account-wide interdimensional vault for all profession materials in AzerothCore (WoW WotLK 3.3.5)**
+
+### How it works
+**Storing** - Automatically deposits looted/created profession materials into a shared account-wide vault. Your vaulted materials are visible and easily managed via the included addon.
+<br>
+**Crafting** - The profession crafting interface displays your vaulted materials seemlessly. Crafting automatically pulls required materials from the vault into your bags for that craft, Cancelling a craft returns the materials to the vault.
+
+<br>
 
 <table>
   <tr>
@@ -18,7 +26,7 @@ Automatically deposits profession materials into a shared vault accessible by al
      **BEFORE:** <img width="194" height="81" alt="TitaniumBarOLD1" src="https://github.com/user-attachments/assets/9f6fad52-d4bd-4cdb-b772-966f2233b494" />
      **AFTER:** <img width="193" height="78" alt="TitaniumBar 9" src="https://github.com/user-attachments/assets/d61ae12a-1a1c-4502-a7a7-e10b87fb37cf" />
 
-
+- Cancelling a craft now instantly returns the materials to your vault if they were unvaulted
 - Added a new clean **modern interface** which is the default, see screenshots below, you can switch between Modern/Classic anytime by clicking the switch icon in top-left.
 - Improved abyssal storage addon interface and functionality (Classic UI). Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions.
 - Now able to easily deposit per-material via right-click when abyssal storage interface is open (Deposit All was the only option before). Also added per item SFX feedback when depositing/withdrawing (same used for banks).
@@ -33,13 +41,13 @@ Automatically deposits profession materials into a shared vault accessible by al
 
 ## Features
 - **Auto-deposit**: Profession materials are automatically vaulted when picked up
-- <kbd>**NEW**</kbd> **Crafting integration**: Seamlessly integrates vaulted materials when crafting, both the material counts and craftable recipe amounts take into account all vault stored materials, tested on default Blizzard interface and elvUI. Example screenshots below.
-- <kbd>**NEW**</kbd> **Vault-aware filtering**: The "Have Materials" checkbox filters craftable recipes based on total material counts in bags and abyssal storage plus.
+- <kbd>**NEW**</kbd> **Crafting integration**: Seamlessly integrates vaulted materials when crafting, both the material counts and craftable recipe amounts take into account all vault stored materials, tested on default Blizzard interface and elvUI. Example screenshots below
+- <kbd>**NEW**</kbd> **Vault-aware filtering**: The "Have Materials" checkbox filters craftable recipes based on total material counts in bags and abyssal storage plus
 - **Quest integration**: Quest-required items are pulled from the vault automatically on turn-in
 - **Multi-craft**: "Create All" uses vault materials across the full batch
-- **Grid UI**: Searchable item grid with tooltips.
+- **Grid UI**: Searchable item grid with tooltips
 - **Real-time sync**: Vault state syncs on login and updates incrementally
-- <kbd>**NEW**</kbd> **Tools protected** : Profession tools and other outliers in the profession category are excluded from Deposit All (runed rods, Gnomish Army Knife, Jeweler's Kit e.t.c).
+- <kbd>**NEW**</kbd> **Tools protected** : Profession tools and other outliers in the profession category are excluded from Deposit All (runed rods, Gnomish Army Knife, Jeweler's Kit etc.)
 
 ## Opening the Vault
 - Right-clicking the backpack
@@ -52,8 +60,8 @@ Automatically deposits profession materials into a shared vault accessible by al
 - Click "Deposit All" in the abyssal storage interface
 - <kbd>**NEW**</kbd> Right-click a material in your bags while the vault is open
 - <kbd>**NEW**</kbd> Right-click the addon's minimap icon to Deposit All
-- <kbd>**NEW**</kbd> Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**. 
-   - New installs default to `Ctrl-B` if that key is unbound. 
+- <kbd>**NEW**</kbd> Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**
+   - New installs default to `Ctrl-B` if that key is unbound
 
 ## Withdrawing Materials
 - Right-click a stored material in the vault to withdraw the full stored amount
