@@ -1215,20 +1215,35 @@ local function InvalidateTradeCache()
     wipe(tradeCache.counts)
 end
 
-local function GetVaultCountForReagent(reagentName, realIndex, reagentIndex)
-    if not reagentName then return 0 end
+local function GetReagentEntry(reagentName, realIndex, reagentIndex)
+    if not reagentName then return nil end
     local entry = reagentItemIds[reagentName]
-    if entry == nil then
-        local now = GetTime()
-        if (reagentItemRetry[reagentName] or 0) > now then return 0 end
-        reagentItemRetry[reagentName] = now + 1
-        if not origGetTradeSkillReagentItemLink or not realIndex or not reagentIndex then return 0 end
-        local link = origGetTradeSkillReagentItemLink(realIndex, reagentIndex)
-        entry = AbyssalStoragePlus:EntryFromLink(link)
-        if not entry then return 0 end
-        reagentItemIds[reagentName] = entry
+    if entry ~= nil then return entry end
+    local now = GetTime()
+    if (reagentItemRetry[reagentName] or 0) > now then return nil end
+    reagentItemRetry[reagentName] = now + 1
+    if not origGetTradeSkillReagentItemLink or not realIndex or not reagentIndex then return nil end
+    local link = origGetTradeSkillReagentItemLink(realIndex, reagentIndex)
+    entry = AbyssalStoragePlus:EntryFromLink(link)
+    if not entry then return nil end
+    reagentItemIds[reagentName] = entry
+    return entry
+end
+
+local SERVER_TOTAL_TTL = 0.5
+
+-- Server sends bag+vault atomically on vault/item moves; prefer it briefly
+local function GetServerTotal(entry)
+    if not entry then return nil end
+    local total = AbyssalStoragePlus.totals and AbyssalStoragePlus.totals[entry]
+    if not total then return nil end
+    local at = AbyssalStoragePlus.totalsAt and AbyssalStoragePlus.totalsAt[entry]
+    if not at or (GetTime() - at) > SERVER_TOTAL_TTL then
+        AbyssalStoragePlus.totals[entry] = nil
+        AbyssalStoragePlus.totalsAt[entry] = nil
+        return nil
     end
-    return AbyssalStoragePlus.items[entry] or 0
+    return total
 end
 
 local function ReportTradeError(err)
@@ -1250,9 +1265,13 @@ local function GetRecipeCounts(realIndex)
     for i = 1, numReagents do
         local reagentName, _, need, have = origGetTradeSkillReagentInfo(realIndex, i)
         if need and need > 0 and have then
-            local vault = GetVaultCountForReagent(reagentName, realIndex, i)
+            local entry = GetReagentEntry(reagentName, realIndex, i)
+            local vault = entry and (AbyssalStoragePlus.items[entry] or 0) or 0
+            local total = have + vault
+            local serverTotal = GetServerTotal(entry)
+            if serverTotal then total = serverTotal end
             bagMax = math.min(bagMax, math.floor(have / need))
-            totalMax = math.min(totalMax, math.floor((have + vault) / need))
+            totalMax = math.min(totalMax, math.floor(total / need))
         end
     end
     if bagMax == math.huge then
@@ -1372,7 +1391,10 @@ local function PostTradeSelection(id, force)
     for i = 1, numReagents do
         local reagentName, _, need, have = origGetTradeSkillReagentInfo(id, i)
         if reagentName and need then
-            local total = (tonumber(have) or 0) + GetVaultCountForReagent(reagentName, id, i)
+            local entry = GetReagentEntry(reagentName, id, i)
+            local total = (tonumber(have) or 0) + (entry and (AbyssalStoragePlus.items[entry] or 0) or 0)
+            local serverTotal = GetServerTotal(entry)
+            if serverTotal then total = serverTotal end
             local reagent = _G["TradeSkillReagent"..i]
             local nameText = _G["TradeSkillReagent"..i.."Name"]
             local countText = _G["TradeSkillReagent"..i.."Count"]

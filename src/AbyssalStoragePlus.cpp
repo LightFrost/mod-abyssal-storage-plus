@@ -318,7 +318,10 @@ void AbyssalStoragePlusMgr::SendFullSync(Player* player)
 
 void AbyssalStoragePlusMgr::SendItemUpdate(Player* player, uint32 itemEntry, uint32 count)
 {
-    std::string msg = "UPD:" + std::to_string(itemEntry) + "," + std::to_string(count);
+    // Include bag+vault total so the client can render without a mid-move race
+    uint32 bagCount = player ? player->GetItemCount(itemEntry) : 0;
+    std::string msg = "UPD:" + std::to_string(itemEntry) + "," + std::to_string(count)
+        + "," + std::to_string(bagCount + count);
     SendAddonMessage(player, msg);
 }
 

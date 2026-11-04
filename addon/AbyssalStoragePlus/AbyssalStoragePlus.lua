@@ -1,6 +1,8 @@
 -- Abyssal Storage Plus - Core Logic
 AbyssalStoragePlus = AbyssalStoragePlus or {}
 AbyssalStoragePlus.items = {} -- { [itemEntry] = count }
+AbyssalStoragePlus.totals = {} -- { [itemEntry] = bagPlusVault }
+AbyssalStoragePlus.totalsAt = {} -- { [itemEntry] = GetTime() }
 AbyssalStoragePlus.vaultVersion = 0
 AbyssalStoragePlus.PREFIX = "ABYS"
 AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
@@ -155,6 +157,8 @@ end
 function AbyssalStoragePlus:HandleSync(payload)
     if not payload or payload == "" then
         self.items = {}
+        self.totals = {}
+        self.totalsAt = {}
         self.vaultVersion = self.vaultVersion + 1
         if self.UpdateUI then self:UpdateUI() end
         return
@@ -165,6 +169,8 @@ function AbyssalStoragePlus:HandleSync(payload)
     -- We track sync state: first SYNC clears, subsequent ones merge
     if not self._syncActive then
         self.items = {}
+        self.totals = {}
+        self.totalsAt = {}
         self.vaultVersion = self.vaultVersion + 1
         self._syncActive = true
     end
@@ -187,14 +193,25 @@ end
 
 function AbyssalStoragePlus:HandleUpdate(payload)
     if not payload then return end
-    local entry, count = payload:match("(%d+),(%d+)")
+    local entry, count, total = payload:match("(%d+),(%d+),(%d+)")
+    if not entry then
+        entry, count = payload:match("(%d+),(%d+)")
+    end
     if entry and count then
         entry = tonumber(entry)
         count = tonumber(count)
+        total = total and tonumber(total) or nil
         if count > 0 then
             self.items[entry] = count
         else
             self.items[entry] = nil
+        end
+        if total then
+            self.totals[entry] = total
+            self.totalsAt[entry] = GetTime()
+        else
+            self.totals[entry] = nil
+            self.totalsAt[entry] = nil
         end
         self.vaultVersion = self.vaultVersion + 1
         -- Skip UI refresh during multi-packet SYNC to avoid flashing incomplete data
@@ -207,6 +224,8 @@ function AbyssalStoragePlus:HandleDelete(payload)
     local entry = tonumber(payload)
     if entry then
         self.items[entry] = nil
+        self.totals[entry] = nil
+        self.totalsAt[entry] = nil
         self.vaultVersion = self.vaultVersion + 1
         if not self._syncActive and self.UpdateUI then self:UpdateUI() end
     end

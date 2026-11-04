@@ -53,6 +53,22 @@ static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, ui
     data->isMaterializing = false;
 }
 
+// Push current bag+vault totals for each reagent of a spell
+static void SendSpellReagentTotals(Player* player, SpellInfo const* spellInfo, uint32 accountId)
+{
+    if (!player || !spellInfo)
+        return;
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        int32 reagentEntry = spellInfo->Reagent[i];
+        if (reagentEntry <= 0 || spellInfo->ReagentCount[i] == 0)
+            continue;
+        sAbyssalStoragePlusMgr->SendItemUpdate(player, uint32(reagentEntry),
+            sAbyssalStoragePlusMgr->GetItemCount(accountId, uint32(reagentEntry)));
+    }
+}
+
 // ============================================================================
 // WorldScript — Config Loading
 // ============================================================================
@@ -351,6 +367,10 @@ public:
 
             uint32 deficit = reagentCount - playerHas;
 
+            // Send invariant total before the bag packet to avoid a count flicker
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, uint32(reagentEntry),
+                sAbyssalStoragePlusMgr->GetItemCount(accountId, uint32(reagentEntry)));
+
             ItemPosCountVec dest;
             InventoryResult invResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, reagentEntry, deficit);
             if (invResult != EQUIP_ERR_OK)
@@ -388,6 +408,11 @@ public:
         if (!data || data->materializedItems.empty())
             return;
 
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Refresh totals now that this craft consumed its reagents
+        SendSpellReagentTotals(player, spellInfo, accountId);
+
         // Multi-craft: if more crafts remain, queue the next one instead of re-vaulting
         if (data->pendingCrafts > 0 && data->pendingSpellId == spellInfo->Id)
         {
@@ -400,8 +425,6 @@ public:
             // Last craft done — fall through to re-vault leftovers
         }
 
-        uint32 accountId = player->GetSession()->GetAccountId();
-
         // Re-vault any materialized items that are still in inventory (leftovers)
         RevaultMaterializedItems(player, data, accountId);
         data->pendingCrafts = 0;
@@ -409,7 +432,7 @@ public:
         data->autoStoreEnabled = true;
     }
 
-    void OnSpellCastCancel(Spell* /*spell*/, Unit* caster, SpellInfo const* /*spellInfo*/, bool /*bySelf*/) override
+    void OnSpellCastCancel(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*bySelf*/) override
     {
         if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
@@ -427,6 +450,9 @@ public:
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Send the pre-revault total (invariant) before bags shrink
+        SendSpellReagentTotals(player, spellInfo, accountId);
 
         // Interrupted craft: return pulled reagents to the vault
         RevaultMaterializedItems(player, data, accountId);
@@ -861,6 +887,10 @@ public:
             if (toWithdraw == 0)
                 continue;
 
+            // Send invariant total before the bag packet to avoid a count flicker
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry,
+                sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
+
             ItemPosCountVec dest;
             InventoryResult invResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, r.entry, toWithdraw);
             if (invResult != EQUIP_ERR_OK)
@@ -902,6 +932,9 @@ public:
                     {
                         uint32 entry = item->GetEntry();
                         uint32 count = item->GetCount();
+                        // Send invariant total before bags shrink
+                        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
+                            sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
                         player->DestroyItemCount(entry, count, true);
                         sAbyssalStoragePlusMgr->DepositItem(accountId, entry, count);
                         sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
