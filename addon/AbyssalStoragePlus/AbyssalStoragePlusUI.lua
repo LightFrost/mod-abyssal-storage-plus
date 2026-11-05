@@ -1123,26 +1123,39 @@ end)
 -- Right-click bag items to deposit
 -- ============================================================================
 
+-- Hook securely; replacing this global taints the protected on-use path of UseContainerItem
 if ContainerFrameItemButton_OnClick then
-    local origContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
-    ContainerFrameItemButton_OnClick = function(self, button, ...)
-        if button == "RightButton" and AbyssalStoragePlusFrame:IsShown() then
-            local bag = self:GetParent():GetID()
-            local slot = self:GetID()
-            local link = GetContainerItemLink(bag, slot)
-            local itemType = link and select(6, GetItemInfo(link))
-            if bag and bag >= 0 and bag <= NUM_BAG_SLOTS
-                and (itemType == "Trade Goods" or itemType == "Gem") then
-                local _, count, locked = GetContainerItemInfo(bag, slot)
-                local entry = link and AbyssalStoragePlus:EntryFromLink(link)
-                if entry and count and count > 0 and not locked then
-                    AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
-                    return
-                end
-            end
+    hooksecurefunc("ContainerFrameItemButton_OnClick", function(self, button)
+        if button ~= "RightButton" or not AbyssalStoragePlusFrame:IsShown() then
+            return
         end
-        return origContainerFrameItemButton_OnClick(self, button, ...)
-    end
+
+        -- Let the default handler own the click when another container UI is open
+        if (MerchantFrame and MerchantFrame:IsShown())
+            or (TradeFrame and TradeFrame:IsShown())
+            or (MailFrame and MailFrame:IsShown())
+            or (BankFrame and BankFrame:IsShown()) then
+            return
+        end
+
+        local bag = self:GetParent():GetID()
+        local slot = self:GetID()
+        if not bag or bag < 0 or bag > NUM_BAG_SLOTS then
+            return
+        end
+
+        local link = GetContainerItemLink(bag, slot)
+        local itemType = link and select(6, GetItemInfo(link))
+        if itemType ~= "Trade Goods" and itemType ~= "Gem" then
+            return
+        end
+
+        local _, count, locked = GetContainerItemInfo(bag, slot)
+        local entry = link and AbyssalStoragePlus:EntryFromLink(link)
+        if entry and count and count > 0 and not locked then
+            AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
+        end
+    end)
 end
 
 -- ============================================================================
