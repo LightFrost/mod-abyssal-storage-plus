@@ -25,6 +25,7 @@ If migrating from this mod, just replace the module & addon with mine. It still 
      **BEFORE:** <img width="194" height="81" alt="TitaniumBarOLD1" src="https://github.com/user-attachments/assets/9f6fad52-d4bd-4cdb-b772-966f2233b494" />
      **AFTER:** <img width="193" height="78" alt="TitaniumBar 9" src="https://github.com/user-attachments/assets/d61ae12a-1a1c-4502-a7a7-e10b87fb37cf" />
 
+- The claimed quest integration (pull materials on quest turn-in) was non-functional. Added entirely new logic that auto pulls materials from the vault on quest accept instead and prints an informative chat message including partial pull amounts e.g. "Abyssal Storage Plus: Pulled [Lean Wolf Flank] x8 from storage for quest [Seasoned Wolf Kabobs]; 2 still needed.".
 - Cancelling a craft now instantly returns the materials to your vault if they were unvaulted
 - Added a new clean *modern interface* that sorts by profession instead of material type, this is the new default. see screenshots below, you can switch between Modern/Classic anytime by clicking the switch icon in the top-left.
 - Improved abyssal storage addon interface and functionality (Classic UI). Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions.
@@ -42,7 +43,7 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 - **Auto-deposit**: Profession materials are automatically vaulted when picked up
 - <kbd>**NEW**</kbd> **Crafting integration**: Seamlessly integrates vaulted materials when crafting, both the material counts and craftable recipe amounts take into account all vault stored materials, tested on default Blizzard interface and elvUI. Example screenshots below
 - <kbd>**NEW**</kbd> **Vault-aware filtering**: The "Have Materials" checkbox filters craftable recipes based on total material counts in bags and abyssal storage plus
-- **Quest integration**: Materials required for active-quests are excluded from auto-deposit up to the required amount.
+- <kbd>**NEW**</kbd> **Quest integration**: Accepting a quest that requires materials will auto pull the full or partial amount of materials from your vault if they exist. Any looted materials that are required for active-quests are excluded from auto-deposit up to the required amount.
 - <kbd>**UPDATE**</kbd> **Vault Interface Addon**: A choice between modern or classic UI for displaying vaulted materials (images below). Includes fuzzy search and materials grouped by profession category (modern) or material type (classic)
 - **Real-time sync**: Vault state syncs on login and updates incrementally
 - <kbd>**NEW**</kbd> **Tools protected** : Profession tools and other outliers in the profession category are excluded from Deposit All (runed rods, Gnomish Army Knife, Jeweler's Kit etc.)
@@ -93,6 +94,7 @@ In `mod_abyssal_storage_plus.conf`:
 
 ```
 AbyssalStoragePlus.Enable = 1
+AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 ```
 
 ## Installation

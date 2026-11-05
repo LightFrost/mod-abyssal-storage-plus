@@ -66,6 +66,9 @@ public:
     bool IsEnabled() const { return _enabled; }
     void SetEnabled(bool enabled) { _enabled = enabled; }
 
+    bool IsAutoUnvaultQuestItemsEnabled() const { return _autoUnvaultQuestItems; }
+    void SetAutoUnvaultQuestItems(bool enabled) { _autoUnvaultQuestItems = enabled; }
+
 private:
     AbyssalStoragePlusMgr() = default;
 
@@ -78,6 +81,7 @@ private:
     std::mutex _botCacheMutex;
 
     bool _enabled = true;
+    bool _autoUnvaultQuestItems = true;
 };
 
 #define sAbyssalStoragePlusMgr AbyssalStoragePlusMgr::instance()

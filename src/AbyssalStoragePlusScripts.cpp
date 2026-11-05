@@ -30,6 +30,18 @@ static std::string BuildItemLink(uint32 itemEntry)
     return ss.str();
 }
 
+// Build a clickable quest link like "|cffffff00|Hquest:33:2|h[Quest Name]|h|r"
+static std::string BuildQuestLink(Quest const* quest)
+{
+    if (!quest)
+        return "";
+
+    std::ostringstream ss;
+    ss << "|cffffff00|Hquest:" << quest->GetQuestId() << ":" << quest->GetQuestLevel();
+    ss << "|h[" << quest->GetTitle() << "]|h|r";
+    return ss.str();
+}
+
 // Record a vault pull plus the bag count before it
 static void TrackMaterializedItem(AbyssalPlayerData* data, uint32 entry, uint32 baseline, uint32 amount)
 {
@@ -89,6 +101,53 @@ static void SendSpellReagentTotals(Player* player, SpellInfo const* spellInfo, u
     }
 }
 
+// Pull up to amount of one item from the vault into bags, returning how many fit
+static uint32 PullQuestMaterials(Player* player, uint32 accountId, uint32 itemEntry, uint32 amount)
+{
+    if (!player || amount == 0)
+        return 0;
+
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+    if (!proto)
+        return 0;
+
+    uint32 maxStack = std::max<uint32>(proto->GetMaxStackSize(), 1);
+    uint32 pulled = 0;
+
+    while (amount > 0)
+    {
+        uint32 chunk = std::min(amount, maxStack);
+        ItemPosCountVec dest;
+        InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemEntry, chunk);
+
+        // Shrink the chunk until it fits (partial stacks, limited slots)
+        while (result != EQUIP_ERR_OK && chunk > 1)
+        {
+            chunk /= 2;
+            dest.clear();
+            result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemEntry, chunk);
+        }
+
+        if (result != EQUIP_ERR_OK)
+            break;
+
+        if (!player->StoreNewItem(dest, itemEntry, true))
+            break;
+
+        if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, chunk))
+        {
+            // Vault debit failed; undo the store so nothing is duplicated
+            player->DestroyItemCount(itemEntry, chunk, true);
+            break;
+        }
+
+        pulled += chunk;
+        amount -= chunk;
+    }
+
+    return pulled;
+}
+
 // ============================================================================
 // WorldScript — Config Loading
 // ============================================================================
@@ -101,6 +160,8 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         sAbyssalStoragePlusMgr->SetEnabled(sConfigMgr->GetOption<bool>("AbyssalStoragePlus.Enable", true));
+        sAbyssalStoragePlusMgr->SetAutoUnvaultQuestItems(
+            sConfigMgr->GetOption<bool>("AbyssalStoragePlus.AutoUnvaultQuestItems", true));
     }
 };
 
@@ -116,7 +177,7 @@ public:
         PLAYERHOOK_ON_LOGOUT,
         PLAYERHOOK_ON_UPDATE,
         PLAYERHOOK_ON_STORE_NEW_ITEM,
-        PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE
+        PLAYERHOOK_ON_PLAYER_QUEST_ACCEPT
     }) { }
 
     void OnPlayerLogin(Player* player) override
@@ -223,71 +284,80 @@ public:
         }
     }
 
-    bool OnPlayerBeforeQuestComplete(Player* player, uint32 questId) override
+    void OnPlayerQuestAccept(Player* player, Quest const* quest) override
     {
-        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player)
-            return true;
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !quest)
+            return;
+
+        if (!sAbyssalStoragePlusMgr->IsAutoUnvaultQuestItemsEnabled())
+            return;
 
         if (sAbyssalStoragePlusMgr->IsBotAccount(player))
-            return true;
+            return;
 
-        AbyssalPlayerData* data = GetAbyssalData(player);
+        // Only quests that need items to be completed
+        if (!quest->HasSpecialFlag(QUEST_SPECIAL_FLAGS_DELIVER))
+            return;
 
-        // Prevent infinite recursion: StoreNewItem -> ItemAddedQuestCheck ->
-        // CompleteQuest -> OnPlayerBeforeQuestComplete -> StoreNewItem ...
-        if (data && data->isMaterializing)
-            return true;
-
-        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-        if (!quest)
-            return true;
+        // Auto-complete quests do not require items in bags
+        if (quest->IsAutoComplete() || !quest->GetQuestMethod())
+            return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        bool previousAutoStore = data ? data->autoStoreEnabled : true;
         if (data)
-            data->isMaterializing = true;
+            data->autoStoreEnabled = false;
 
         for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
         {
-            uint32 reqItem = quest->RequiredItemId[i];
-            uint32 reqCount = quest->RequiredItemCount[i];
-            if (!reqItem || !reqCount)
+            uint32 itemEntry = quest->RequiredItemId[i];
+            uint32 required = quest->RequiredItemCount[i];
+            if (!itemEntry || !required)
                 continue;
 
-            uint32 playerCount = player->GetItemCount(reqItem);
-            if (playerCount >= reqCount)
+            uint32 inBags = player->GetItemCount(itemEntry);
+            if (inBags >= required)
                 continue;
 
-            uint32 deficit = reqCount - playerCount;
-            uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, reqItem);
+            uint32 missing = required - inBags;
+            uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
             if (vaultCount == 0)
                 continue;
 
-            uint32 toMaterialize = std::min(deficit, vaultCount);
+            uint32 wanted = std::min(missing, vaultCount);
+            uint32 pulled = PullQuestMaterials(player, accountId, itemEntry, wanted);
 
-            ItemPosCountVec dest;
-            InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, reqItem, toMaterialize);
-            if (result != EQUIP_ERR_OK)
+            if (pulled == 0)
             {
-                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize quest items.");
-                // Return anything already pulled for earlier objectives
-                if (data)
-                    RevaultMaterializedItems(player, data, accountId);
-                break;
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00B0E8Abyssal Storage Plus: Not enough bag space to pull |r{}|cFF00B0E8 for quest - '{}|cFF00B0E8'.|r",
+                    BuildItemLink(itemEntry), BuildQuestLink(quest));
+                continue;
             }
 
-            Item* newItem = player->StoreNewItem(dest, reqItem, true);
-            if (newItem && data)
-                TrackMaterializedItem(data, reqItem, playerCount, toMaterialize);
+            uint32 newVaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
+            if (newVaultCount > 0)
+                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newVaultCount);
+            else
+                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
 
-            sAbyssalStoragePlusMgr->WithdrawItem(accountId, reqItem, toMaterialize);
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, reqItem, sAbyssalStoragePlusMgr->GetItemCount(accountId, reqItem));
+            if (pulled < missing)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00B0E8Abyssal Storage Plus: Pulled |r{}|cFF00B0E8 x{} from storage for quest - {}|cFF00B0E8; {} still needed.|r",
+                    BuildItemLink(itemEntry), pulled, BuildQuestLink(quest), missing - pulled);
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00B0E8Abyssal Storage Plus: Pulled |r{}|cFF00B0E8 x{} from storage for quest - {}|cFF00B0E8.|r",
+                    BuildItemLink(itemEntry), pulled, BuildQuestLink(quest));
+            }
         }
 
         if (data)
-            data->isMaterializing = false;
-
-        return true;
+            data->autoStoreEnabled = previousAutoStore;
     }
 };
 

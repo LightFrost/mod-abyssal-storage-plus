@@ -12,3 +12,12 @@
 #
 
 AbyssalStoragePlus.Enable = 1
+
+#
+#    AbyssalStoragePlus.AutoUnvaultQuestItems
+#        Description: Pull required quest materials from storage when a quest is accepted.
+#        Default:     1 (Enabled)
+#                     0 (Disabled)
+#
+
+AbyssalStoragePlus.AutoUnvaultQuestItems = 1
