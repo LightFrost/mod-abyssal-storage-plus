@@ -561,6 +561,8 @@ public:
             { "deposit",  HandleDepositCommand,   SEC_PLAYER, Console::No },
             { "sync",     HandleSyncCommand,      SEC_PLAYER, Console::No },
             { "craft",    HandleCraftCommand,      SEC_PLAYER, Console::No },
+            { "prepare",  HandlePrepareCommand,    SEC_PLAYER, Console::No },
+            { "revault",  HandleRevaultCommand,    SEC_PLAYER, Console::No },
         };
         static ChatCommandTable commandTable =
         {
@@ -640,6 +642,102 @@ public:
             handler->PSendSysMessage("Abyssal Storage Plus: Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
         }
 
+        return true;
+    }
+
+    // Ensure the player has at least `need` of an item in bags, pulling the deficit
+    static bool HandlePrepareCommand(ChatHandler* handler, uint32 itemEntry, uint32 need)
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
+            return false;
+
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        if (need == 0)
+            return true;
+
+        uint32 playerHas = player->GetItemCount(itemEntry);
+        if (playerHas >= need)
+            return true;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        uint32 vaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
+        if (vaultCount == 0)
+            return true;
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemEntry);
+        if (!proto)
+            return true;
+
+        uint32 toWithdraw = std::min(need - playerHas, vaultCount);
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        bool wasAutoStore = data ? data->autoStoreEnabled : true;
+        if (data)
+            data->autoStoreEnabled = false;
+
+        uint32 maxStack = std::max<uint32>(proto->GetMaxStackSize(), 1);
+        uint32 remaining = toWithdraw;
+        uint32 stored = 0;
+        while (remaining > 0)
+        {
+            uint32 chunk = std::min(remaining, maxStack);
+            ItemPosCountVec dest;
+            InventoryResult result = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemEntry, chunk);
+            if (result != EQUIP_ERR_OK)
+                break;
+
+            player->StoreNewItem(dest, itemEntry, true);
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, chunk);
+            stored += chunk;
+            remaining -= chunk;
+        }
+
+        if (data)
+        {
+            // Track so leftovers return to the vault on cancel/deselect
+            if (stored > 0)
+                TrackMaterializedItem(data, itemEntry, playerHas, stored);
+            data->autoStoreEnabled = wasAutoStore;
+        }
+
+        if (stored > 0)
+        {
+            uint32 newCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
+            if (newCount > 0)
+                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newCount);
+            else
+                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
+        }
+
+        // Bag space ran out before the full amount could be pulled
+        if (stored < toWithdraw)
+        {
+            handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus: |cff1cd3a2Not enough bag space to pull |r{}.|r",
+                BuildItemLink(itemEntry));
+        }
+
+        return true;
+    }
+
+    // Return any crafting/quest reagents that were pulled but not consumed
+    static bool HandleRevaultCommand(ChatHandler* handler)
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
+            return false;
+
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data || data->materializedItems.empty())
+            return true;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        RevaultMaterializedItems(player, data, accountId);
         return true;
     }
 

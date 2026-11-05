@@ -1443,6 +1443,95 @@ local function GetTradeSkillSpellId(id)
     return nil
 end
 
+local preparedRecipe = nil
+
+local function IsCastOnItemRecipe(id)
+    local name, skillType = origGetTradeSkillInfo(id)
+    if not name or skillType == "header" then return false end
+    local _, _, _, _, altVerb = origGetTradeSkillInfo(id)
+    if altVerb then return true end
+    local link = origGetTradeSkillRecipeLink(id) or ""
+    return link:find("enchant:", 1, true) ~= nil
+end
+
+local function ReagentsPresent(id)
+    local numReagents = origGetTradeSkillNumReagents(id) or 0
+    for i = 1, numReagents do
+        local _, _, need, have = origGetTradeSkillReagentInfo(id, i)
+        if (tonumber(have) or 0) < (tonumber(need) or 0) then
+            return false
+        end
+    end
+    return true
+end
+
+-- Ask the server to bring each missing recipe reagent into bags (tracked, revaultable)
+local function RequestRecipeReagents(id)
+    local requested = {}
+    local numReagents = origGetTradeSkillNumReagents(id) or 0
+    for i = 1, numReagents do
+        local reagentName, _, need, have = origGetTradeSkillReagentInfo(id, i)
+        need = tonumber(need) or 0
+        have = tonumber(have) or 0
+        if need > 0 and have < need then
+            local entry = GetReagentEntry(reagentName, id, i)
+            local vault = entry and (AbyssalStoragePlus.items[entry] or 0) or 0
+            if entry and vault > 0 then
+                AbyssalStoragePlus:SendCommand("asp prepare " .. entry .. " " .. need)
+                requested[entry] = vault
+            end
+        end
+    end
+    return requested
+end
+
+local function RevaultPrepared()
+    if not preparedRecipe then return end
+    preparedRecipe = nil
+    AbyssalStoragePlus:SendCommand("asp revault")
+end
+
+-- Pull reagents only when the player is about to cast the selected recipe
+-- (hover or press the Enchant/Modify button), never while just browsing.
+local function PrepareSelectedRecipe()
+    if tradeDisabled or IsTradeSkillLinked() or not TradeSkillFrame or not TradeSkillFrame:IsShown() then
+        return
+    end
+
+    local id = TradeSkillFrame.selectedSkill
+    if not id or id <= 0 or not IsCastOnItemRecipe(id) then
+        return
+    end
+
+    if ReagentsPresent(id) then
+        preparedRecipe = id
+        return
+    end
+
+    if preparedRecipe ~= id then
+        RevaultPrepared()
+        preparedRecipe = id
+    end
+
+    RequestRecipeReagents(id)
+end
+
+-- Return pulled reagents when the player leaves an enchant/socket recipe
+local function SyncEnchantPreparation(id)
+    if not TradeSkillFrame or not TradeSkillFrame:IsShown() then
+        RevaultPrepared()
+        return
+    end
+    if not id or id <= 0 or not IsCastOnItemRecipe(id) then
+        RevaultPrepared()
+        return
+    end
+
+    if preparedRecipe and preparedRecipe ~= id then
+        RevaultPrepared()
+    end
+end
+
 local function WrappedDoTradeSkill(id, repeatCount)
     if tradeDisabled or IsTradeSkillLinked() then
         return origDoTradeSkill(id, repeatCount)
@@ -1474,6 +1563,17 @@ local function WrappedDoTradeSkill(id, repeatCount)
     if totalMax < 1 then return end
     if repeatCount <= bagMax or totalMax <= bagMax then
         return origDoTradeSkill(id, repeatCount)
+    end
+
+    -- These recipes cast on an item ("Enchant"/"Modify") and cannot be force-cast.
+    -- The client only starts targeting when the reagents are already in bags, so
+    -- if they are not ready yet, pull them now; the next click will cast.
+    if IsCastOnItemRecipe(id) then
+        if ReagentsPresent(id) then
+            return origDoTradeSkill(id, 1)
+        end
+        PrepareSelectedRecipe()
+        return
     end
 
     local spellId = GetTradeSkillSpellId(id)
@@ -1850,6 +1950,8 @@ local function HookTradeSkill()
     hooksecurefunc("TradeSkillFrame_SetSelection", function(id)
         local ok, err = pcall(PostTradeSelection, id)
         if not ok then ReportTradeError(err) end
+        local okPrep, errPrep = pcall(SyncEnchantPreparation, id)
+        if not okPrep then ReportTradeError(errPrep) end
     end)
 
     if TradeSkillRankFrame then
@@ -1866,8 +1968,15 @@ local function HookTradeSkill()
         tradeResetScroll = false
         tradeScrollToSelected = false
         if tradeRefreshFrame then tradeRefreshFrame:Hide() end
+        RevaultPrepared()
         InvalidateTradeCache()
     end)
+
+    -- Pull only when about to cast, so browsing recipes does not move materials
+    if TradeSkillCreateButton then
+        TradeSkillCreateButton:HookScript("OnEnter", PrepareSelectedRecipe)
+        TradeSkillCreateButton:HookScript("OnMouseDown", PrepareSelectedRecipe)
+    end
 end
 
 local tradeHookFrame = CreateFrame("Frame")
