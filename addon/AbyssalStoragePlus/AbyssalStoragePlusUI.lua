@@ -1449,9 +1449,7 @@ local function IsCastOnItemRecipe(id)
     local name, skillType = origGetTradeSkillInfo(id)
     if not name or skillType == "header" then return false end
     local _, _, _, _, altVerb = origGetTradeSkillInfo(id)
-    if altVerb then return true end
-    local link = origGetTradeSkillRecipeLink(id) or ""
-    return link:find("enchant:", 1, true) ~= nil
+    return altVerb ~= nil and altVerb ~= ""
 end
 
 local function ReagentsPresent(id)

@@ -132,7 +132,7 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 4. The `abyssal_storage` table should be automatically created in your `acore_characters` database on server start. If the table is missing, run `data/sql/db-characters/abyssal_storage_plus.sql` against your `acore_characters` database
 5. Copy the `addon/AbyssalStoragePlus` folder into your WoW `Interface/AddOns` directory
 
----
+
 ## Changelog
 
 ### 2026-11-05
