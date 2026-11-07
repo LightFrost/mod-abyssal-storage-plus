@@ -134,6 +134,15 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 
 ## Changelog
 
+### 2026-11-07
+- Refactor some logic and clean up code.
+- Vault changes now instantly update every online character on the account, including altbots.
+- Added safeguards against vault desync: deposits and withdrawals record exactly what moved and undo the transfer if it fails.
+- Full vault syncs now clear stale entries reliably, and `/asp craft` rejects recipes the character hasn't learned.
+
+### 2026-11-06
+- Fix regressions for "Create" and "Create All" logic that got overwritten with a recent commit to improve handling for recipes that require a target e.g. enchanting
+
 ### 2026-11-05
 - Fixed Enchanting/Socket item recipes not pulling their materials from the vault. Recipes that cast on an item (Enchant/Modify) now pull vault materials on hover and cast on a single click.
 - Refactored right-click bag deposit to use `hooksecurefunc`, fixing the `Interface action failed because of an AddOn` error that blocked using on-use items (food, scrolls, essences, etc.).
