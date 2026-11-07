@@ -63,6 +63,8 @@ public:
     void SendFullSync(Player* player);
     void SendItemUpdate(Player* player, uint32 itemEntry, uint32 count);
     void SendItemDelete(Player* player, uint32 itemEntry);
+    void BroadcastItemUpdate(uint32 accountId, uint32 itemEntry);
+    void BroadcastFullSync(uint32 accountId);
 
     bool IsEnabled() const { return _enabled; }
     void SetEnabled(bool enabled) { _enabled = enabled; }

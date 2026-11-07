@@ -5,6 +5,7 @@
 #include "Player.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "QuestDef.h"
@@ -356,6 +357,36 @@ void AbyssalStoragePlusMgr::SendItemUpdate(Player* player, uint32 itemEntry, uin
 
 void AbyssalStoragePlusMgr::SendItemDelete(Player* player, uint32 itemEntry)
 {
-    std::string msg = "DEL:" + std::to_string(itemEntry);
-    SendAddonMessage(player, msg);
+    SendAddonMessage(player, "DEL:" + std::to_string(itemEntry));
+}
+
+// Collect every online character on the account
+static std::vector<Player*> GetAccountPlayers(uint32 accountId)
+{
+    std::vector<Player*> players;
+    sWorldSessionMgr->DoForAllOnlinePlayers([accountId, &players](Player* player)
+    {
+        if (player->GetSession() && player->GetSession()->GetAccountId() == accountId)
+            players.push_back(player);
+    });
+    return players;
+}
+
+void AbyssalStoragePlusMgr::BroadcastItemUpdate(uint32 accountId, uint32 itemEntry)
+{
+    uint32 count = GetItemCount(accountId, itemEntry);
+
+    for (Player* player : GetAccountPlayers(accountId))
+    {
+        if (count > 0)
+            SendItemUpdate(player, itemEntry, count);
+        else
+            SendItemDelete(player, itemEntry);
+    }
+}
+
+void AbyssalStoragePlusMgr::BroadcastFullSync(uint32 accountId)
+{
+    for (Player* player : GetAccountPlayers(accountId))
+        SendFullSync(player);
 }

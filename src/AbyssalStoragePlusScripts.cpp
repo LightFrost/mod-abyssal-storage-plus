@@ -96,8 +96,7 @@ static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, ui
             continue;
 
         sAbyssalStoragePlusMgr->DepositItem(accountId, entry, destroyed);
-        sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
-            sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
+        sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, entry);
     }
     data->materializedItems.clear();
     data->isMaterializing = false;
@@ -301,9 +300,7 @@ public:
                 continue;
 
             sAbyssalStoragePlusMgr->DepositItem(accountId, dep.itemEntry, destroyed);
-
-            uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, dep.itemEntry);
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, dep.itemEntry, newTotal);
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, dep.itemEntry);
         }
     }
 
@@ -359,11 +356,7 @@ public:
                 continue;
             }
 
-            uint32 newVaultCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
-            if (newVaultCount > 0)
-                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newVaultCount);
-            else
-                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, itemEntry);
 
             if (pulled < missing)
             {
@@ -509,7 +502,7 @@ public:
             }
 
             TrackMaterializedItem(data, uint32(reagentEntry), playerHas, deficit);
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, reagentEntry, sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry));
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, uint32(reagentEntry));
         }
         data->isMaterializing = false;
     }
@@ -689,11 +682,7 @@ public:
         uint32 withdrawn = count - remaining;
         if (withdrawn > 0)
         {
-            uint32 newCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
-            if (newCount > 0)
-                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newCount);
-            else
-                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, itemEntry);
 
             handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
         }
@@ -771,11 +760,7 @@ public:
 
         if (stored > 0)
         {
-            uint32 newCount = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
-            if (newCount > 0)
-                sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newCount);
-            else
-                sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, itemEntry);
         }
 
         // Bag space ran out before the full amount could be pulled
@@ -925,8 +910,7 @@ public:
             if (data)
                 data->autoStoreEnabled = true;
 
-            uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newTotal);
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, itemEntry);
             handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Deposited {} x{}.", BuildItemLink(itemEntry), destroyed);
             return true;
         }
@@ -988,7 +972,7 @@ public:
         if (data)
             data->autoStoreEnabled = true;
 
-        sAbyssalStoragePlusMgr->SendFullSync(player);
+        sAbyssalStoragePlusMgr->BroadcastFullSync(accountId);
         handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Deposited {} item stacks.", depositedCount);
 
         return true;
@@ -1208,7 +1192,7 @@ public:
             if (data)
                 TrackMaterializedItem(data, r.entry, r.playerHas, toWithdraw);
 
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
+            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, uint32(r.entry));
         }
 
         if (data)
