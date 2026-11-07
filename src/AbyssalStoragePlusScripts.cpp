@@ -55,6 +55,18 @@ static void TrackMaterializedItem(AbyssalPlayerData* data, uint32 entry, uint32 
         it->second.amount += amount;
 }
 
+// Remove only the items a StoreNewItem call actually added
+static void UndoStoredItems(Player* player, uint32 itemEntry, uint32 bagBefore)
+{
+    if (!player)
+        return;
+
+    uint32 after = player->GetItemCount(itemEntry);
+    uint32 stored = after > bagBefore ? after - bagBefore : 0;
+    if (stored > 0)
+        player->DestroyItemCount(itemEntry, stored, true);
+}
+
 // Return only the leftover vault-pulled items still in bags, not merged player stacks
 static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, uint32 accountId)
 {
@@ -76,8 +88,14 @@ static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, ui
         sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
             sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
 
+        uint32 before = player->GetItemCount(entry);
         player->DestroyItemCount(entry, leftover, true);
-        sAbyssalStoragePlusMgr->DepositItem(accountId, entry, leftover);
+        uint32 after = player->GetItemCount(entry);
+        uint32 destroyed = before > after ? before - after : 0;
+        if (destroyed == 0)
+            continue;
+
+        sAbyssalStoragePlusMgr->DepositItem(accountId, entry, destroyed);
         sAbyssalStoragePlusMgr->SendItemUpdate(player, entry,
             sAbyssalStoragePlusMgr->GetItemCount(accountId, entry));
     }
@@ -131,13 +149,15 @@ static uint32 PullQuestMaterials(Player* player, uint32 accountId, uint32 itemEn
         if (result != EQUIP_ERR_OK)
             break;
 
-        if (!player->StoreNewItem(dest, itemEntry, true))
+        uint32 bagBefore = player->GetItemCount(itemEntry);
+        Item* newItem = player->StoreNewItem(dest, itemEntry, true);
+        if (!newItem)
             break;
 
         if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, chunk))
         {
-            // Vault debit failed; undo the store so nothing is duplicated
-            player->DestroyItemCount(itemEntry, chunk, true);
+            // Vault debit failed; undo exactly what was stored
+            UndoStoredItems(player, itemEntry, bagBefore);
             break;
         }
 
@@ -195,21 +215,19 @@ public:
 
     void OnPlayerLogout(Player* player) override
     {
-        if (!sAbyssalStoragePlusMgr->IsEnabled())
-            return;
-
-        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
+        if (!player)
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        AbyssalPlayerData* data = GetAbyssalData(player);
 
-        // Re-vault any materialized items still in inventory
-        RevaultMaterializedItems(player, data, accountId);
+        if (sAbyssalStoragePlusMgr->IsEnabled() && !sAbyssalStoragePlusMgr->IsBotAccount(player))
+        {
+            // Re-vault any materialized items still in inventory
+            AbyssalPlayerData* data = GetAbyssalData(player);
+            RevaultMaterializedItems(player, data, accountId);
+        }
 
-        // Check if any other character on this account is online
-        // For simplicity, always unload — LoadAccountData will re-cache on next login
-        // A more efficient approach would reference-count, but this is safe
+        // Release this character; the cache unloads when the last one leaves
         sAbyssalStoragePlusMgr->UnloadAccountData(accountId);
     }
 
@@ -277,7 +295,12 @@ public:
             toDeposit = std::min(toDeposit, playerHas - questReserved);
 
             player->DestroyItemCount(dep.itemEntry, toDeposit, true);
-            sAbyssalStoragePlusMgr->DepositItem(accountId, dep.itemEntry, toDeposit);
+            uint32 after = player->GetItemCount(dep.itemEntry);
+            uint32 destroyed = playerHas > after ? playerHas - after : 0;
+            if (destroyed == 0)
+                continue;
+
+            sAbyssalStoragePlusMgr->DepositItem(accountId, dep.itemEntry, destroyed);
 
             uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, dep.itemEntry);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, dep.itemEntry, newTotal);
@@ -345,13 +368,13 @@ public:
             if (pulled < missing)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFF00B0E8Abyssal Storage Plus: Pulled |r{}|cFF00B0E8 x{} from storage for quest - {}|cFF00B0E8; {} still needed.|r",
+                    "|cFF00B0E8Abyssal Storage Plus:|r |cff1cd3a2Pulled|r {} x{} |cff1cd3a2from storage for quest - |r{} {} still needed.",
                     BuildItemLink(itemEntry), pulled, BuildQuestLink(quest), missing - pulled);
             }
             else
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFF00B0E8Abyssal Storage Plus: Pulled |r{}|cFF00B0E8 x{} from storage for quest - {}|cFF00B0E8.|r",
+                    "|cFF00B0E8Abyssal Storage Plus:|r |cff1cd3a2Pulled|r {} x{} |cff1cd3a2from storage for quest - |r{}",
                     BuildItemLink(itemEntry), pulled, BuildQuestLink(quest));
             }
         }
@@ -456,16 +479,36 @@ public:
             {
                 // Roll back reagents pulled for earlier slots
                 RevaultMaterializedItems(player, data, accountId);
+                data->isMaterializing = false;
                 res = SPELL_FAILED_DONT_REPORT;
                 ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize crafting reagents.");
                 return;
             }
 
+            uint32 bagBefore = player->GetItemCount(reagentEntry);
             Item* newItem = player->StoreNewItem(dest, reagentEntry, true);
-            if (newItem)
-                TrackMaterializedItem(data, uint32(reagentEntry), playerHas, deficit);
+            if (!newItem)
+            {
+                // Roll back reagents pulled for earlier slots
+                RevaultMaterializedItems(player, data, accountId);
+                data->isMaterializing = false;
+                res = SPELL_FAILED_DONT_REPORT;
+                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough bag space to materialize crafting reagents.");
+                return;
+            }
 
-            sAbyssalStoragePlusMgr->WithdrawItem(accountId, reagentEntry, deficit);
+            if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, reagentEntry, deficit))
+            {
+                // Vault debit failed; undo exactly what was stored
+                UndoStoredItems(player, uint32(reagentEntry), bagBefore);
+                RevaultMaterializedItems(player, data, accountId);
+                data->isMaterializing = false;
+                res = SPELL_FAILED_DONT_REPORT;
+                ChatHandler(player->GetSession()).SendSysMessage("Abyssal Storage Plus: Not enough stored reagents to cast.");
+                return;
+            }
+
+            TrackMaterializedItem(data, uint32(reagentEntry), playerHas, deficit);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, reagentEntry, sAbyssalStoragePlusMgr->GetItemCount(accountId, reagentEntry));
         }
         data->isMaterializing = false;
@@ -621,8 +664,21 @@ public:
                 break;
             }
 
-            player->StoreNewItem(dest, itemEntry, true);
-            sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, stackSize);
+            uint32 bagBefore = player->GetItemCount(itemEntry);
+            Item* newItem = player->StoreNewItem(dest, itemEntry, true);
+            if (!newItem)
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space.");
+                break;
+            }
+
+            if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, stackSize))
+            {
+                // Vault debit failed; undo exactly what was stored
+                UndoStoredItems(player, itemEntry, bagBefore);
+                break;
+            }
+
             remaining -= stackSize;
         }
 
@@ -639,7 +695,7 @@ public:
             else
                 sAbyssalStoragePlusMgr->SendItemDelete(player, itemEntry);
 
-            handler->PSendSysMessage("Abyssal Storage Plus: Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
+            handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Withdrew {} x{}.", BuildItemLink(itemEntry), withdrawn);
         }
 
         return true;
@@ -689,8 +745,18 @@ public:
             if (result != EQUIP_ERR_OK)
                 break;
 
-            player->StoreNewItem(dest, itemEntry, true);
-            sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, chunk);
+            uint32 bagBefore = player->GetItemCount(itemEntry);
+            Item* newItem = player->StoreNewItem(dest, itemEntry, true);
+            if (!newItem)
+                break;
+
+            if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, itemEntry, chunk))
+            {
+                // Vault debit failed; undo exactly what was stored
+                UndoStoredItems(player, itemEntry, bagBefore);
+                break;
+            }
+
             stored += chunk;
             remaining -= chunk;
         }
@@ -831,17 +897,29 @@ public:
                     return true;
             }
 
+            uint32 destroyed = 0;
             if (exactItem)
             {
+                // This overload leaves the undestroyed remainder in destroyCount
                 uint32 destroyCount = count;
                 player->DestroyItemCount(exactItem, destroyCount, true);
+                destroyed = count - destroyCount;
             }
             else
             {
+                uint32 before = player->GetItemCount(itemEntry);
                 player->DestroyItemCount(itemEntry, count, true);
+                uint32 after = player->GetItemCount(itemEntry);
+                destroyed = before > after ? before - after : 0;
             }
 
-            sAbyssalStoragePlusMgr->DepositItem(accountId, itemEntry, count);
+            if (destroyed == 0)
+            {
+                handler->SendSysMessage("Abyssal Storage Plus: That item moved. Try again.");
+                return true;
+            }
+
+            sAbyssalStoragePlusMgr->DepositItem(accountId, itemEntry, destroyed);
 
             AbyssalPlayerData* data = GetAbyssalData(player);
             if (data)
@@ -849,7 +927,7 @@ public:
 
             uint32 newTotal = sAbyssalStoragePlusMgr->GetItemCount(accountId, itemEntry);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, itemEntry, newTotal);
-            handler->PSendSysMessage("Abyssal Storage Plus: Deposited {} x{}.", BuildItemLink(itemEntry), count);
+            handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Deposited {} x{}.", BuildItemLink(itemEntry), destroyed);
             return true;
         }
 
@@ -897,7 +975,12 @@ public:
                 continue;
 
             player->DestroyItemCount(entry, toMove, true);
-            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, toMove);
+            uint32 after = player->GetItemCount(entry);
+            uint32 destroyed = playerHas > after ? playerHas - after : 0;
+            if (destroyed == 0)
+                continue;
+
+            sAbyssalStoragePlusMgr->DepositItem(accountId, entry, destroyed);
             ++depositedCount;
         }
 
@@ -906,7 +989,7 @@ public:
             data->autoStoreEnabled = true;
 
         sAbyssalStoragePlusMgr->SendFullSync(player);
-        handler->PSendSysMessage("Abyssal Storage Plus: Deposited {} item stacks.", depositedCount);
+        handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Deposited {} item stacks.", depositedCount);
 
         return true;
     }
@@ -921,7 +1004,7 @@ public:
             return false;
 
         sAbyssalStoragePlusMgr->SendFullSync(player);
-        handler->SendSysMessage("Abyssal Storage Plus: Sync complete.");
+        handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Sync complete.");
         return true;
     }
 
@@ -939,7 +1022,7 @@ public:
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
         {
-            handler->SendSysMessage("Abyssal Storage Plus: Invalid spell.");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Invalid spell.");
             return true;
         }
 
@@ -956,7 +1039,7 @@ public:
 
         if (!hasReagents)
         {
-            handler->SendSysMessage("Abyssal Storage Plus: Spell has no reagents.");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Spell has no reagents.");
             return true;
         }
 
@@ -988,7 +1071,7 @@ public:
 
             if (playerHas + vaultHas < reagentCount)
             {
-                handler->SendSysMessage("Abyssal Storage Plus: Not enough reagents.");
+                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough reagents.");
                 return true;
             }
 
@@ -1028,7 +1111,7 @@ public:
         // Need: 1 slot per vault reagent type + 1 for the crafted product
         if (freeSlots < vaultReagentSlots + 1)
         {
-            handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space (need room for reagents + product).");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space (need room for reagents + product).");
             return true;
         }
 
@@ -1055,7 +1138,7 @@ public:
 
         if (maxCrafts == 0)
         {
-            handler->SendSysMessage("Abyssal Storage Plus: Not enough reagents.");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough reagents.");
             return true;
         }
 
@@ -1087,16 +1170,44 @@ public:
             {
                 // Roll back reagents pulled for earlier types
                 if (data)
+                {
                     RevaultMaterializedItems(player, data, accountId);
-                handler->SendSysMessage("Abyssal Storage Plus: Not enough bag space for reagents.");
+                    data->isMaterializing = false;
+                }
+                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space for reagents.");
                 return true;
             }
 
+            uint32 bagBefore = player->GetItemCount(r.entry);
             Item* newItem = player->StoreNewItem(dest, r.entry, true);
-            if (newItem && data)
+            if (!newItem)
+            {
+                // Roll back reagents pulled for earlier types
+                if (data)
+                {
+                    RevaultMaterializedItems(player, data, accountId);
+                    data->isMaterializing = false;
+                }
+                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space for reagents.");
+                return true;
+            }
+
+            if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, uint32(r.entry), toWithdraw))
+            {
+                // Vault debit failed; undo exactly what was stored
+                UndoStoredItems(player, uint32(r.entry), bagBefore);
+                if (data)
+                {
+                    RevaultMaterializedItems(player, data, accountId);
+                    data->isMaterializing = false;
+                }
+                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough stored reagents to craft.");
+                return true;
+            }
+
+            if (data)
                 TrackMaterializedItem(data, r.entry, r.playerHas, toWithdraw);
 
-            sAbyssalStoragePlusMgr->WithdrawItem(accountId, r.entry, toWithdraw);
             sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry, sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
         }
 
@@ -1120,7 +1231,7 @@ public:
                 data->pendingSpellId = 0;
                 data->autoStoreEnabled = true;
             }
-            handler->SendSysMessage("Abyssal Storage Plus: Recipe could not be cast; materials returned.");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Recipe could not be cast; materials returned.");
         }
 
         return true;

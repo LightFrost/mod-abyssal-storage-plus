@@ -4,6 +4,7 @@
 #include "DataMap.h"
 #include "Define.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -74,6 +75,8 @@ private:
 
     // accountId -> (itemEntry -> count)
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _storage;
+    std::unordered_set<uint32> _loadedAccounts; // accounts fully loaded from DB
+    std::unordered_map<uint32, uint32> _accountRefs; // accountId -> online characters
     std::mutex _storageMutex;
 
     // accountId -> is random bot account (cached, avoids per-call DB lookups)

@@ -28,8 +28,10 @@ void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
 {
     {
         std::lock_guard<std::mutex> lock(_storageMutex);
-        if (_storage.find(accountId) != _storage.end())
-            return; // already loaded
+        ++_accountRefs[accountId];
+
+        if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
+            return; // already loaded, another character is online
     }
 
     QueryResult result = CharacterDatabase.Query("SELECT item_entry, count FROM abyssal_storage WHERE account_id = {}", accountId);
@@ -47,26 +49,53 @@ void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
     }
 
     std::lock_guard<std::mutex> lock(_storageMutex);
+
+    // Do not publish data if the last character logged out during the query
+    auto refIt = _accountRefs.find(accountId);
+    if (refIt == _accountRefs.end() || refIt->second == 0)
+        return;
+
+    // Never overwrite a vault another load already populated
+    if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
+        return;
+
     _storage[accountId] = std::move(items);
+    _loadedAccounts.insert(accountId);
 }
 
 void AbyssalStoragePlusMgr::UnloadAccountData(uint32 accountId)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
+
+    auto refIt = _accountRefs.find(accountId);
+    if (refIt != _accountRefs.end())
+    {
+        // Keep the cache alive while another character is still online
+        if (refIt->second > 1)
+        {
+            --refIt->second;
+            return;
+        }
+        _accountRefs.erase(refIt);
+    }
+
     _storage.erase(accountId);
+    _loadedAccounts.erase(accountId);
 }
 
 bool AbyssalStoragePlusMgr::IsAccountLoaded(uint32 accountId)
 {
     std::lock_guard<std::mutex> lock(_storageMutex);
-    return _storage.find(accountId) != _storage.end();
+    return _loadedAccounts.find(accountId) != _loadedAccounts.end();
 }
 
 void AbyssalStoragePlusMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 count)
 {
     {
         std::lock_guard<std::mutex> lock(_storageMutex);
-        _storage[accountId][itemEntry] += count;
+        // Only touch the cache for fully loaded accounts
+        if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
+            _storage[accountId][itemEntry] += count;
     }
 
     CharacterDatabase.Execute("INSERT INTO abyssal_storage (account_id, item_entry, count) VALUES ({}, {}, {}) "
