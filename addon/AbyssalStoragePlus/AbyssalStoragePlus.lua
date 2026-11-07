@@ -69,11 +69,6 @@ function AbyssalStoragePlus.SetTimer(delay, callback)
     timerFrame:Show()
 end
 
-function AbyssalStoragePlus.CancelTimers()
-    wipe(activeTimers)
-    timerFrame:Hide()
-end
-
 -- Extract item entry from an item link: |Hitem:12345:...|h[Name]|h
 function AbyssalStoragePlus:EntryFromLink(link)
     if not link then return nil end
@@ -138,12 +133,23 @@ end
 function AbyssalStoragePlus:HandleMessage(msg)
     if not msg then return end
 
-    local cmd = msg:match("^(%u+):")
-    local payload = msg:match("^%u+:(.*)")
+    local cmd, payload = msg:match("^(%u+):(.*)$")
+    if not cmd then
+        cmd = msg:match("^(%u+)$")
+    end
 
     if not cmd then return end
 
-    if cmd == "SYNC" then
+    if cmd == "SYNCB" then
+        self.items = {}
+        self.totals = {}
+        self.totalsAt = {}
+        self._syncActive = true
+    elseif cmd == "SYNCE" then
+        self._syncActive = false
+        self.vaultVersion = self.vaultVersion + 1
+        if self.UpdateUI then self:UpdateUI() end
+    elseif cmd == "SYNC" then
         self:HandleSync(payload)
     elseif cmd == "UPD" then
         self:HandleUpdate(payload)
@@ -155,40 +161,29 @@ function AbyssalStoragePlus:HandleMessage(msg)
 end
 
 function AbyssalStoragePlus:HandleSync(payload)
-    if not payload or payload == "" then
+    -- Standalone SYNC (older server or missed begin marker) replaces first
+    local standalone = not self._syncActive
+    if standalone then
         self.items = {}
         self.totals = {}
         self.totalsAt = {}
-        self.vaultVersion = self.vaultVersion + 1
-        if self.UpdateUI then self:UpdateUI() end
-        return
-    end
-
-    -- Parse "entry1,count1;entry2,count2;..."
-    -- SYNC messages may arrive in multiple packets — merge instead of replace
-    -- We track sync state: first SYNC clears, subsequent ones merge
-    if not self._syncActive then
-        self.items = {}
-        self.totals = {}
-        self.totalsAt = {}
-        self.vaultVersion = self.vaultVersion + 1
         self._syncActive = true
     end
 
-    for pair in payload:gmatch("[^;]+") do
-        local entry, count = pair:match("(%d+),(%d+)")
-        if entry and count then
-            self.items[tonumber(entry)] = tonumber(count)
-            self.vaultVersion = self.vaultVersion + 1
+    if payload and payload ~= "" then
+        for pair in payload:gmatch("[^;]+") do
+            local entry, count = pair:match("(%d+),(%d+)")
+            if entry and count then
+                self.items[tonumber(entry)] = tonumber(count)
+            end
         end
     end
 
-    -- Debounce UI update for multi-packet syncs
-    AbyssalStoragePlus.CancelTimers()
-    AbyssalStoragePlus.SetTimer(0.1, function()
-        AbyssalStoragePlus._syncActive = false
-        if AbyssalStoragePlus.UpdateUI then AbyssalStoragePlus:UpdateUI() end
-    end)
+    if standalone then
+        self._syncActive = false
+        self.vaultVersion = self.vaultVersion + 1
+        if self.UpdateUI then self:UpdateUI() end
+    end
 end
 
 function AbyssalStoragePlus:HandleUpdate(payload)

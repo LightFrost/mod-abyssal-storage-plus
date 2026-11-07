@@ -5,7 +5,6 @@
 #include "Define.h"
 #include <unordered_map>
 #include <unordered_set>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -45,7 +44,6 @@ public:
 
     void LoadAccountData(uint32 accountId);
     void UnloadAccountData(uint32 accountId);
-    bool IsAccountLoaded(uint32 accountId);
 
     void DepositItem(uint32 accountId, uint32 itemEntry, uint32 count);
     bool WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 count);
@@ -79,11 +77,9 @@ private:
     std::unordered_map<uint32, std::unordered_map<uint32, uint32>> _storage;
     std::unordered_set<uint32> _loadedAccounts; // accounts fully loaded from DB
     std::unordered_map<uint32, uint32> _accountRefs; // accountId -> online characters
-    std::mutex _storageMutex;
 
     // accountId -> is random bot account (cached, avoids per-call DB lookups)
     std::unordered_map<uint32, bool> _botAccountCache;
-    std::mutex _botCacheMutex;
 
     bool _enabled = true;
     bool _autoUnvaultQuestItems = true;

@@ -1437,10 +1437,9 @@ end
 
 local function GetTradeSkillSpellId(id)
     local link = origGetTradeSkillRecipeLink(id)
-    if link then
-        return tonumber(link:match("enchant:(%d+)") or link:match("spell:(%d+)"))
-    end
-    return nil
+    if not link then return nil end
+    -- Tradeskill recipe links use enchant:<spellId> in 3.3.5
+    return tonumber(link:match("enchant:(%d+)") or link:match("spell:(%d+)"))
 end
 
 local preparedRecipe = nil

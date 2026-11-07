@@ -1010,6 +1010,12 @@ public:
             return true;
         }
 
+        if (!player->HasSpell(spellId) || !spellInfo->HasAttribute(SPELL_ATTR0_IS_TRADESKILL))
+        {
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r You do not know that recipe.");
+            return true;
+        }
+
         // Verify spell has reagents
         bool hasReagents = false;
         for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)

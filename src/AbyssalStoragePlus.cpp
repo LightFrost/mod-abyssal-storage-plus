@@ -27,13 +27,10 @@ AbyssalStoragePlusMgr* AbyssalStoragePlusMgr::instance()
 
 void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
 {
-    {
-        std::lock_guard<std::mutex> lock(_storageMutex);
-        ++_accountRefs[accountId];
+    ++_accountRefs[accountId];
 
-        if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
-            return; // already loaded, another character is online
-    }
+    if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
+        return; // already loaded, another character is online
 
     QueryResult result = CharacterDatabase.Query("SELECT item_entry, count FROM abyssal_storage WHERE account_id = {}", accountId);
 
@@ -48,8 +45,6 @@ void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
             items[itemEntry] = count;
         } while (result->NextRow());
     }
-
-    std::lock_guard<std::mutex> lock(_storageMutex);
 
     // Do not publish data if the last character logged out during the query
     auto refIt = _accountRefs.find(accountId);
@@ -66,8 +61,6 @@ void AbyssalStoragePlusMgr::LoadAccountData(uint32 accountId)
 
 void AbyssalStoragePlusMgr::UnloadAccountData(uint32 accountId)
 {
-    std::lock_guard<std::mutex> lock(_storageMutex);
-
     auto refIt = _accountRefs.find(accountId);
     if (refIt != _accountRefs.end())
     {
@@ -84,20 +77,11 @@ void AbyssalStoragePlusMgr::UnloadAccountData(uint32 accountId)
     _loadedAccounts.erase(accountId);
 }
 
-bool AbyssalStoragePlusMgr::IsAccountLoaded(uint32 accountId)
-{
-    std::lock_guard<std::mutex> lock(_storageMutex);
-    return _loadedAccounts.find(accountId) != _loadedAccounts.end();
-}
-
 void AbyssalStoragePlusMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 count)
 {
-    {
-        std::lock_guard<std::mutex> lock(_storageMutex);
-        // Only touch the cache for fully loaded accounts
-        if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
-            _storage[accountId][itemEntry] += count;
-    }
+    // Only touch the cache for fully loaded accounts
+    if (_loadedAccounts.find(accountId) != _loadedAccounts.end())
+        _storage[accountId][itemEntry] += count;
 
     CharacterDatabase.Execute("INSERT INTO abyssal_storage (account_id, item_entry, count) VALUES ({}, {}, {}) "
         "ON DUPLICATE KEY UPDATE count = count + {}", accountId, itemEntry, count, count);
@@ -105,8 +89,6 @@ void AbyssalStoragePlusMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint
 
 bool AbyssalStoragePlusMgr::WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 count)
 {
-    std::lock_guard<std::mutex> lock(_storageMutex);
-
     auto accIt = _storage.find(accountId);
     if (accIt == _storage.end())
         return false;
@@ -133,8 +115,6 @@ bool AbyssalStoragePlusMgr::WithdrawItem(uint32 accountId, uint32 itemEntry, uin
 
 uint32 AbyssalStoragePlusMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
 {
-    std::lock_guard<std::mutex> lock(_storageMutex);
-
     auto accIt = _storage.find(accountId);
     if (accIt == _storage.end())
         return 0;
@@ -148,8 +128,6 @@ uint32 AbyssalStoragePlusMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
 
 std::unordered_map<uint32, uint32> AbyssalStoragePlusMgr::GetAllItems(uint32 accountId)
 {
-    std::lock_guard<std::mutex> lock(_storageMutex);
-
     auto accIt = _storage.find(accountId);
     if (accIt == _storage.end())
         return {};
@@ -225,12 +203,9 @@ bool AbyssalStoragePlusMgr::IsBotAccount(Player* player)
 
     uint32 accountId = player->GetSession()->GetAccountId();
 
-    {
-        std::lock_guard<std::mutex> lock(_botCacheMutex);
-        auto it = _botAccountCache.find(accountId);
-        if (it != _botAccountCache.end())
-            return it->second;
-    }
+    auto cached = _botAccountCache.find(accountId);
+    if (cached != _botAccountCache.end())
+        return cached->second;
 
     std::string username;
     if (!sAccountMgr->GetName(accountId, username))
@@ -241,7 +216,6 @@ bool AbyssalStoragePlusMgr::IsBotAccount(Player* player)
     for (size_t i = 0; isBot && i < 6; ++i)
         isBot = std::tolower(static_cast<unsigned char>(username[i])) == botPrefix[i];
 
-    std::lock_guard<std::mutex> lock(_botCacheMutex);
     _botAccountCache[accountId] = isBot;
     return isBot;
 }
@@ -327,23 +301,26 @@ void AbyssalStoragePlusMgr::SendFullSync(Player* player)
     uint32 accountId = player->GetSession()->GetAccountId();
     auto items = GetAllItems(accountId);
 
-    if (items.empty())
+    // Explicit begin/end markers let the client replace, not merge, stale data
+    SendAddonMessage(player, "SYNCB");
+
+    if (!items.empty())
     {
-        SendAddonMessage(player, "SYNC:");
-        return;
+        std::string msg = "SYNC:";
+        msg.reserve(items.size() * 16);
+        bool first = true;
+        for (auto const& pair : items)
+        {
+            if (!first)
+                msg += ";";
+            msg += std::to_string(pair.first) + "," + std::to_string(pair.second);
+            first = false;
+        }
+
+        SendAddonMessage(player, msg);
     }
 
-    std::string msg = "SYNC:";
-    bool first = true;
-    for (auto const& pair : items)
-    {
-        if (!first)
-            msg += ";";
-        msg += std::to_string(pair.first) + "," + std::to_string(pair.second);
-        first = false;
-    }
-
-    SendAddonMessage(player, msg);
+    SendAddonMessage(player, "SYNCE");
 }
 
 void AbyssalStoragePlusMgr::SendItemUpdate(Player* player, uint32 itemEntry, uint32 count)
