@@ -24,6 +24,19 @@ local BANK_VIEWPORT_HEIGHT = BANK_FRAME_HEIGHT - HEADER_HEIGHT - 24
 local VIEW_MODE_BANK = "bank"
 local VIEW_MODE_CLASSIC = "classic"
 
+local SERVER_TOTAL_TTL = 0.5
+
+-- Drop short-lived server totals so the tables cannot grow unbounded
+local function PruneServerTotals()
+    local now = GetTime()
+    for entry, at in pairs(AbyssalStoragePlus.totalsAt) do
+        if not at or (now - at) > SERVER_TOTAL_TTL then
+            AbyssalStoragePlus.totalsAt[entry] = nil
+            AbyssalStoragePlus.totals[entry] = nil
+        end
+    end
+end
+
 AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
 AbyssalStoragePlusDB.viewMode = AbyssalStoragePlusDB.viewMode or VIEW_MODE_BANK
 
@@ -157,10 +170,25 @@ local function GetProfessionCategory(entry, itemType, itemSubType, itemName)
     return "Other"
 end
 
+local itemMetaCache = {}
+
+-- Only cache resolved items so uncached entries retry on the next rebuild
+local function GetItemMeta(entry)
+    local meta = itemMetaCache[entry]
+    if meta then
+        return meta.name, meta.itemType, meta.itemSubType, meta.icon
+    end
+    local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
+    if not name then return nil end
+    meta = { name = name, itemType = itemType, itemSubType = itemSubType, icon = icon }
+    itemMetaCache[entry] = meta
+    return name, itemType, itemSubType, icon
+end
+
 local function BuildDisplayList()
     wipe(displayList)
     for entry, count in pairs(AbyssalStoragePlus.items) do
-        local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
+        local name, itemType, itemSubType, icon = GetItemMeta(entry)
         local category = GetItemCategory(itemType, itemSubType)
         local categoryMatches = selectedCategory == "All" or category == selectedCategory
         if name then
@@ -794,7 +822,7 @@ local function BuildBankData()
     local search = bankSearchFilter:lower()
     for entry, count in pairs(AbyssalStoragePlus.items) do
         totalUnique = totalUnique + 1
-        local name, _, _, _, _, itemType, itemSubType, _, _, icon = GetItemInfo(entry)
+        local name, itemType, itemSubType, icon = GetItemMeta(entry)
         local profession = GetProfessionCategory(entry, itemType, itemSubType, name)
         professionCounts[profession] = (professionCounts[profession] or 0) + 1
 
@@ -998,6 +1026,7 @@ end
 
 function AbyssalStoragePlus:UpdateUI()
     AbyssalStoragePlus._uiUpdatePending = false
+    PruneServerTotals()
     if AbyssalStoragePlus.RefreshTradeSkill then
         AbyssalStoragePlus:RefreshTradeSkill()
     end
@@ -1249,8 +1278,6 @@ local function GetReagentEntry(reagentName, realIndex, reagentIndex)
     reagentItemIds[reagentName] = entry
     return entry
 end
-
-local SERVER_TOTAL_TTL = 0.5
 
 -- Server sends bag+vault atomically on vault/item moves; prefer it briefly
 local function GetServerTotal(entry)
@@ -2047,6 +2074,7 @@ minimapHighlight:SetAllPoints()
 local function UpdateMinimapButtonPosition()
     local angle = math.rad(AbyssalStoragePlusDB.minimapAngle or 220)
     local radius = 80
+    minimapButton:ClearAllPoints()
     minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
 

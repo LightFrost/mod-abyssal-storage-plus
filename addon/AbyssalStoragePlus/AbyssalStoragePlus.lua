@@ -36,10 +36,6 @@ end
 -- Utility
 -- ============================================================================
 
-local function ParseItemEntry(str)
-    return tonumber(str)
-end
-
 -- Simple timer for 3.3.5 (no C_Timer)
 local timerFrame = CreateFrame("Frame")
 local activeTimers = {}
@@ -300,10 +296,6 @@ SlashCmdList["ABYSSAL"] = function(msg)
                 AbyssalStoragePlusFrame:Hide()
             else
                 AbyssalStoragePlusFrame:Show()
-                AbyssalStoragePlus:UpdateUI()
-                if AbyssalStoragePlus.UpdateUI then
-                    AbyssalStoragePlus:UpdateUI()
-                end
             end
         end
     elseif msg == "deposit" then

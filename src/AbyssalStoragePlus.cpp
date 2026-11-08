@@ -16,7 +16,7 @@ AbyssalPlayerData* GetAbyssalData(Player* player)
 {
     if (!player)
         return nullptr;
-    return player->CustomData.GetDefault<AbyssalPlayerData>("AbyssalData");
+    return player->CustomData.GetDefault<AbyssalPlayerData>(ABYSSAL_DATA_KEY);
 }
 
 AbyssalStoragePlusMgr* AbyssalStoragePlusMgr::instance()
@@ -126,13 +126,13 @@ uint32 AbyssalStoragePlusMgr::GetItemCount(uint32 accountId, uint32 itemEntry)
     return itemIt->second;
 }
 
-std::unordered_map<uint32, uint32> AbyssalStoragePlusMgr::GetAllItems(uint32 accountId)
+std::unordered_map<uint32, uint32> const* AbyssalStoragePlusMgr::GetAllItems(uint32 accountId)
 {
     auto accIt = _storage.find(accountId);
     if (accIt == _storage.end())
-        return {};
+        return nullptr;
 
-    return accIt->second;
+    return &accIt->second;
 }
 
 uint32 AbyssalStoragePlusMgr::GetQuestReservedCount(Player* player, uint32 itemId)
@@ -202,7 +202,7 @@ bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* 
         return false;
 
     // Kits, grinders, and lockpicks lack TotemCategory data
-    if (itemTemplate->ItemId == 20815 || itemTemplate->ItemId == 20824 || itemTemplate->ItemId == 7872)
+    if (IsAbyssalToolItem(itemTemplate->ItemId))
         return false;
 
     uint32 reservedCount = 0;
@@ -270,7 +270,7 @@ static void SendOnePacket(Player* player, std::string const& msg)
 void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& message)
 {
     // Prefix with "ABYS\t" so client receives arg1="ABYS", arg2=message
-    const size_t MAX_MSG_LEN = 240; // leave room for prefix
+    size_t const MAX_MSG_LEN = ABYSSAL_MAX_ADDON_MESSAGE_LEN;
     std::string fullMsg = "ABYS\t" + message;
 
     if (fullMsg.length() <= MAX_MSG_LEN)
@@ -283,7 +283,7 @@ void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& 
     size_t prefixEnd = message.find(':');
     if (prefixEnd == std::string::npos)
     {
-        SendOnePacket(player, ("ABYS\t" + message.substr(0, MAX_MSG_LEN - 5)));
+        SendOnePacket(player, ("ABYS\t" + message.substr(0, MAX_MSG_LEN - ABYSSAL_ADDON_PREFIX_LEN)));
         return;
     }
     prefixEnd++;
@@ -308,7 +308,7 @@ void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& 
             pos = nextSep + 1;
         }
 
-        if (chunk.length() > prefix.length() && chunk.length() + 1 + entry.length() + 5 > MAX_MSG_LEN)
+        if (chunk.length() > prefix.length() && chunk.length() + 1 + entry.length() + ABYSSAL_ADDON_PREFIX_LEN > MAX_MSG_LEN)
         {
             SendOnePacket(player, "ABYS\t" + chunk);
             chunk = prefix;
@@ -326,21 +326,23 @@ void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& 
 void AbyssalStoragePlusMgr::SendFullSync(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
-    auto items = GetAllItems(accountId);
+    std::unordered_map<uint32, uint32> const* items = GetAllItems(accountId);
 
     // Explicit begin/end markers let the client replace, not merge, stale data
     SendAddonMessage(player, "SYNCB");
 
-    if (!items.empty())
+    if (items && !items->empty())
     {
         std::string msg = "SYNC:";
-        msg.reserve(items.size() * 16);
+        msg.reserve(items->size() * 16);
         bool first = true;
-        for (auto const& pair : items)
+        for (auto const& pair : *items)
         {
             if (!first)
-                msg += ";";
-            msg += std::to_string(pair.first) + "," + std::to_string(pair.second);
+                msg += ';';
+            msg += std::to_string(pair.first);
+            msg += ',';
+            msg += std::to_string(pair.second);
             first = false;
         }
 

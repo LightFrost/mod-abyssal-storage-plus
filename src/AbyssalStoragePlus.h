@@ -3,6 +3,7 @@
 
 #include "DataMap.h"
 #include "Define.h"
+#include <cstddef>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -10,6 +11,24 @@
 
 class Player;
 struct ItemTemplate;
+
+constexpr char const* ABYSSAL_DATA_KEY = "AbyssalData";
+
+// Addon message budget in bytes, prefix included
+constexpr size_t ABYSSAL_MAX_ADDON_MESSAGE_LEN = 240;
+constexpr size_t ABYSSAL_ADDON_PREFIX_LEN = 5; // "ABYS\t"
+
+// Trade goods kits that lack TotemCategory data
+constexpr uint32 ABYSSAL_ITEM_RUSTY_THIEVES_TOOLS = 7872;
+constexpr uint32 ABYSSAL_ITEM_JEWELERS_KIT = 20815;
+constexpr uint32 ABYSSAL_ITEM_SIMPLE_GRINDER = 20824;
+
+inline bool IsAbyssalToolItem(uint32 itemId)
+{
+    return itemId == ABYSSAL_ITEM_RUSTY_THIEVES_TOOLS
+        || itemId == ABYSSAL_ITEM_JEWELERS_KIT
+        || itemId == ABYSSAL_ITEM_SIMPLE_GRINDER;
+}
 
 struct PendingDeposit
 {
@@ -48,7 +67,7 @@ public:
     void DepositItem(uint32 accountId, uint32 itemEntry, uint32 count);
     bool WithdrawItem(uint32 accountId, uint32 itemEntry, uint32 count);
     uint32 GetItemCount(uint32 accountId, uint32 itemEntry);
-    std::unordered_map<uint32, uint32> GetAllItems(uint32 accountId);
+    std::unordered_map<uint32, uint32> const* GetAllItems(uint32 accountId);
 
     bool ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate);
     bool ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate,

@@ -265,7 +265,7 @@ public:
             return;
 
         // Cheap early-out: only players with deferred deposits need any work
-        AbyssalPlayerData* data = player->CustomData.Get<AbyssalPlayerData>("AbyssalData");
+        AbyssalPlayerData* data = player->CustomData.Get<AbyssalPlayerData>(ABYSSAL_DATA_KEY);
         if (!data || data->pendingDeposits.empty())
             return;
 
