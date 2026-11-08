@@ -137,7 +137,17 @@ std::unordered_map<uint32, uint32> AbyssalStoragePlusMgr::GetAllItems(uint32 acc
 
 uint32 AbyssalStoragePlusMgr::GetQuestReservedCount(Player* player, uint32 itemId)
 {
-    uint32 reserved = 0;
+    std::unordered_map<uint32, uint32> reserved;
+    GetQuestReservedCounts(player, reserved);
+    auto it = reserved.find(itemId);
+    return it != reserved.end() ? it->second : 0;
+}
+
+void AbyssalStoragePlusMgr::GetQuestReservedCounts(Player* player, std::unordered_map<uint32, uint32>& out)
+{
+    out.clear();
+    if (!player)
+        return;
 
     for (uint8 i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
     {
@@ -155,12 +165,11 @@ uint32 AbyssalStoragePlusMgr::GetQuestReservedCount(Player* player, uint32 itemI
 
         for (uint8 j = 0; j < QUEST_ITEM_OBJECTIVES_COUNT; ++j)
         {
-            if (quest->RequiredItemId[j] == itemId)
-                reserved += quest->RequiredItemCount[j];
+            uint32 requiredItem = quest->RequiredItemId[j];
+            if (requiredItem)
+                out[requiredItem] += quest->RequiredItemCount[j];
         }
     }
-
-    return reserved;
 }
 
 bool AbyssalStoragePlusMgr::IsItemRequiredByActiveQuest(Player* player, uint32 itemId)
@@ -170,6 +179,12 @@ bool AbyssalStoragePlusMgr::IsItemRequiredByActiveQuest(Player* player, uint32 i
 }
 
 bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate)
+{
+    return ShouldAutoStore(player, itemTemplate, nullptr);
+}
+
+bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate,
+    std::unordered_map<uint32, uint32> const* reserved)
 {
     if (!itemTemplate)
         return false;
@@ -190,7 +205,19 @@ bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* 
     if (itemTemplate->ItemId == 20815 || itemTemplate->ItemId == 20824 || itemTemplate->ItemId == 7872)
         return false;
 
-    if (IsItemRequiredByActiveQuest(player, itemTemplate->ItemId))
+    uint32 reservedCount = 0;
+    if (reserved)
+    {
+        auto it = reserved->find(itemTemplate->ItemId);
+        if (it != reserved->end())
+            reservedCount = it->second;
+    }
+    else
+    {
+        reservedCount = GetQuestReservedCount(player, itemTemplate->ItemId);
+    }
+
+    if (reservedCount > 0 && player->GetItemCount(itemTemplate->ItemId) <= reservedCount)
         return false;
 
     return true;

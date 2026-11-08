@@ -134,6 +134,9 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 
 ## Changelog
 
+### 2026-11-08
+- Performance improvements, Reduce vault UI redraws and quest-log scans.
+
 ### 2026-11-07
 - Refactor some logic and clean up code.
 - Vault changes now instantly update every online character on the account, including altbots.

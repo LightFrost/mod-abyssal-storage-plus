@@ -851,17 +851,23 @@ end
 LayoutBankRows = function()
     local viewportHeight = BANK_VIEWPORT_HEIGHT
     local scroll = bankScrollPos
+    local rowCount = #bankRows
 
-    local firstVisible = #bankRows + 1
-    for i, row in ipairs(bankRows) do
+    -- bankRows y is sorted; binary search first visible row
+    local lo, hi = 1, rowCount + 1
+    while lo < hi do
+        local mid = math.floor((lo + hi) * 0.5)
+        local row = bankRows[mid]
         if row.y + row.height > scroll then
-            firstVisible = i
-            break
+            hi = mid
+        else
+            lo = mid + 1
         end
     end
+    local firstVisible = lo
 
     local poolIndex = 0
-    for i = firstVisible, #bankRows do
+    for i = firstVisible, rowCount do
         local row = bankRows[i]
         if row.y >= scroll + viewportHeight then break end
 
@@ -991,6 +997,7 @@ function AbyssalStoragePlus:JumpToProfession(key)
 end
 
 function AbyssalStoragePlus:UpdateUI()
+    AbyssalStoragePlus._uiUpdatePending = false
     if AbyssalStoragePlus.RefreshTradeSkill then
         AbyssalStoragePlus:RefreshTradeSkill()
     end

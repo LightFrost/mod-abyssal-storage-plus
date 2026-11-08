@@ -51,8 +51,11 @@ public:
     std::unordered_map<uint32, uint32> GetAllItems(uint32 accountId);
 
     bool ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate);
+    bool ShouldAutoStore(Player* player, ItemTemplate const* itemTemplate,
+                         std::unordered_map<uint32, uint32> const* reserved);
     bool IsItemRequiredByActiveQuest(Player* player, uint32 itemId);
     uint32 GetQuestReservedCount(Player* player, uint32 itemId);
+    void GetQuestReservedCounts(Player* player, std::unordered_map<uint32, uint32>& out);
 
     bool IsBotAccount(Player* player);
 

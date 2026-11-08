@@ -278,6 +278,10 @@ public:
 
         uint32 accountId = player->GetSession()->GetAccountId();
 
+        // One quest-log scan for the whole batch
+        std::unordered_map<uint32, uint32> questReserved;
+        sAbyssalStoragePlusMgr->GetQuestReservedCounts(player, questReserved);
+
         for (auto const& dep : deposits)
         {
             // Verify the player still has the items (they may have been used/moved)
@@ -286,12 +290,12 @@ public:
             if (toDeposit == 0)
                 continue;
 
-            // Never deposit below the quest-required threshold — guards against
-            // timing races where item->GetCount() or quest status was stale when queued
-            uint32 questReserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, dep.itemEntry);
-            if (playerHas <= questReserved)
+            // Never deposit below the quest-required threshold
+            auto reservedIt = questReserved.find(dep.itemEntry);
+            uint32 questReservedCount = reservedIt != questReserved.end() ? reservedIt->second : 0;
+            if (playerHas <= questReservedCount)
                 continue;
-            toDeposit = std::min(toDeposit, playerHas - questReserved);
+            toDeposit = std::min(toDeposit, playerHas - questReservedCount);
 
             player->DestroyItemCount(dep.itemEntry, toDeposit, true);
             uint32 after = player->GetItemCount(dep.itemEntry);
@@ -919,6 +923,10 @@ public:
         // so destroying during iteration can skip stacks of the same item
         std::unordered_map<uint32, uint32> toDeposit; // itemEntry -> totalCount
 
+        // One quest-log scan for the whole deposit
+        std::unordered_map<uint32, uint32> questReserved;
+        sAbyssalStoragePlusMgr->GetQuestReservedCounts(player, questReserved);
+
         for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
         {
             if (Bag* pBag = player->GetBagByPos(bag))
@@ -929,7 +937,7 @@ public:
                     if (!item)
                         continue;
 
-                    if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate()))
+                    if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate(), &questReserved))
                         toDeposit[item->GetEntry()] += item->GetCount();
                 }
             }
@@ -942,7 +950,7 @@ public:
             if (!item)
                 continue;
 
-            if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate()))
+            if (sAbyssalStoragePlusMgr->ShouldAutoStore(player, item->GetTemplate(), &questReserved))
                 toDeposit[item->GetEntry()] += item->GetCount();
         }
 
@@ -952,7 +960,8 @@ public:
         {
             // Never move items an active quest still needs
             uint32 playerHas = player->GetItemCount(entry);
-            uint32 reserved = sAbyssalStoragePlusMgr->GetQuestReservedCount(player, entry);
+            auto reservedIt = questReserved.find(entry);
+            uint32 reserved = reservedIt != questReserved.end() ? reservedIt->second : 0;
             uint32 surplus = playerHas > reserved ? playerHas - reserved : 0;
             uint32 toMove = std::min(count, surplus);
             if (toMove == 0)

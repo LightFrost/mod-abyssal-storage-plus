@@ -69,6 +69,19 @@ function AbyssalStoragePlus.SetTimer(delay, callback)
     timerFrame:Show()
 end
 
+-- Coalesce bursty server updates into a single UI rebuild
+function AbyssalStoragePlus:RequestUIUpdate()
+    if not self.UpdateUI then return end
+    if self.RefreshTradeSkill then self:RefreshTradeSkill() end
+    if self._uiUpdatePending then return end
+    self._uiUpdatePending = true
+    AbyssalStoragePlus.SetTimer(0.1, function()
+        if not AbyssalStoragePlus._uiUpdatePending then return end
+        AbyssalStoragePlus._uiUpdatePending = false
+        AbyssalStoragePlus:UpdateUI()
+    end)
+end
+
 -- Extract item entry from an item link: |Hitem:12345:...|h[Name]|h
 function AbyssalStoragePlus:EntryFromLink(link)
     if not link then return nil end
@@ -145,10 +158,19 @@ function AbyssalStoragePlus:HandleMessage(msg)
         self.totals = {}
         self.totalsAt = {}
         self._syncActive = true
+        self._syncGeneration = (self._syncGeneration or 0) + 1
+        local gen = self._syncGeneration
+        -- Force-close a sync that never receives its end marker
+        AbyssalStoragePlus.SetTimer(2, function()
+            if AbyssalStoragePlus._syncActive and AbyssalStoragePlus._syncGeneration == gen then
+                AbyssalStoragePlus._syncActive = false
+                AbyssalStoragePlus:RequestUIUpdate()
+            end
+        end)
     elseif cmd == "SYNCE" then
         self._syncActive = false
         self.vaultVersion = self.vaultVersion + 1
-        if self.UpdateUI then self:UpdateUI() end
+        self:RequestUIUpdate()
     elseif cmd == "SYNC" then
         self:HandleSync(payload)
     elseif cmd == "UPD" then
@@ -182,7 +204,7 @@ function AbyssalStoragePlus:HandleSync(payload)
     if standalone then
         self._syncActive = false
         self.vaultVersion = self.vaultVersion + 1
-        if self.UpdateUI then self:UpdateUI() end
+        self:RequestUIUpdate()
     end
 end
 
@@ -210,7 +232,7 @@ function AbyssalStoragePlus:HandleUpdate(payload)
         end
         self.vaultVersion = self.vaultVersion + 1
         -- Skip UI refresh during multi-packet SYNC to avoid flashing incomplete data
-        if not self._syncActive and self.UpdateUI then self:UpdateUI() end
+        if not self._syncActive then self:RequestUIUpdate() end
     end
 end
 
@@ -222,7 +244,7 @@ function AbyssalStoragePlus:HandleDelete(payload)
         self.totals[entry] = nil
         self.totalsAt[entry] = nil
         self.vaultVersion = self.vaultVersion + 1
-        if not self._syncActive and self.UpdateUI then self:UpdateUI() end
+        if not self._syncActive then self:RequestUIUpdate() end
     end
 end
 
