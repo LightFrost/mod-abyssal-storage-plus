@@ -36,7 +36,7 @@ end
 -- Utility
 -- ============================================================================
 
--- Simple timer for 3.3.5 (no C_Timer)
+-- Simple timer for 3.3.5
 local timerFrame = CreateFrame("Frame")
 local activeTimers = {}
 timerFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -175,6 +175,8 @@ function AbyssalStoragePlus:HandleMessage(msg)
         self:HandleDelete(payload)
     elseif cmd == "ERR" then
         self:HandleError(payload)
+    elseif cmd == "VAULT" then
+        self:HandleVaultNotice(payload)
     end
 end
 
@@ -249,6 +251,128 @@ function AbyssalStoragePlus:HandleError(payload)
         DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Abyssal Storage Plus: " .. payload .. "|r")
     end
 end
+
+-- ============================================================================
+-- Vaulted Loot Notices
+-- ============================================================================
+
+local VAULT_ICON_PATH = "Interface\\AddOns\\AbyssalStoragePlus\\VoidPortal.blp"
+local VAULT_ICON_TARGET = 22 -- on-screen px at a 12 pt chat font
+local VAULT_ICON_BASE_FONT = 12
+local VAULT_LABEL = "|cff00ccffYou vaulted material:|r"
+
+-- Icon sized from the displaying chat frame's own font size
+local function VaultIconString(frame)
+    local size = VAULT_ICON_BASE_FONT
+    local source = frame
+    if not (source and source.GetFont) and ChatFrame1 then
+        source = ChatFrame1
+    end
+    if source and source.GetFont then
+        local _, fontSize = source:GetFont()
+        if fontSize and fontSize > 0 then
+            size = fontSize
+        end
+    end
+    local iconSize = math.floor(size * VAULT_ICON_TARGET / VAULT_ICON_BASE_FONT + 0.5)
+    return ("|T%s:%d:%d|t"):format(VAULT_ICON_PATH, iconSize, iconSize)
+end
+
+-- Server announces auto-vaulted items before the client prints them
+local pendingVaults = {} -- [itemEntry] = { count = n, at = GetTime() }
+
+function AbyssalStoragePlus:HandleVaultNotice(payload)
+    local entry = payload and tonumber(payload:match("^(%d+)"))
+    if not entry then return end
+    local now = GetTime()
+    for e, pending in pairs(pendingVaults) do
+        if now - pending.at > 3 then
+            pendingVaults[e] = nil
+        end
+    end
+    local pending = pendingVaults[entry]
+    if not pending then
+        pending = { count = 0, at = now }
+        pendingVaults[entry] = pending
+    end
+    pending.count = pending.count + 1
+    pending.at = now
+end
+
+-- Turn a global format string into a pattern with lazy link capture
+local function ToLootPattern(fmt)
+    if not fmt then return nil end
+    local pat = fmt:gsub("%%s", "\1"):gsub("%%d", "\2")
+    pat = pat:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+    pat = pat:gsub("\1", "(.-)"):gsub("\2", "(%d+)")
+    return "^" .. pat .. "$"
+end
+
+local SELF_LOOT_PATTERNS = {
+    ToLootPattern(LOOT_ITEM_SELF),
+    ToLootPattern(LOOT_ITEM_SELF_MULTIPLE),
+    ToLootPattern(LOOT_ITEM_CREATED_SELF),
+    ToLootPattern(LOOT_ITEM_CREATED_SELF_MULTIPLE),
+    ToLootPattern(LOOT_ITEM_PUSHED_SELF),
+    ToLootPattern(LOOT_ITEM_PUSHED_SELF_MULTIPLE),
+}
+
+-- True only for messages about items this player received
+local function IsSelfLootMessage(msg)
+    for _, pat in pairs(SELF_LOOT_PATTERNS) do
+        if pat and msg:find(pat) then
+            return true
+        end
+    end
+    return false
+end
+
+local function FindPendingEntry(msg)
+    local entry = tonumber(msg:match("item:(%d+)"))
+    if entry then return entry end
+
+    local shown = msg:match("%[(.-)%]")
+    if not shown then return nil end
+    local now = GetTime()
+    for e, pending in pairs(pendingVaults) do
+        if now - pending.at <= 3 and GetItemInfo(e) == shown then
+            return e
+        end
+    end
+    return nil
+end
+
+local function VaultLootFilter(frame, _, msg, ...)
+    if type(msg) ~= "string" then return false end
+    if not IsSelfLootMessage(msg) then return false end
+
+    local entry = FindPendingEntry(msg)
+    local pending = entry and pendingVaults[entry]
+    if not pending then return false end
+    if GetTime() - pending.at > 3 then
+        pendingVaults[entry] = nil
+        return false
+    end
+
+    local count = tonumber(msg:match("x(%d+)%.$")) or 1
+    pending.count = pending.count - 1
+    if pending.count <= 0 then
+        pendingVaults[entry] = nil
+    end
+
+    local link = msg:match("|c%x%x%x%x%x%x%x%x|Hitem:[^|]+|h%[.-%]|h|r")
+        or msg:match("|Hitem:[^|]+|h%[.-%]|h|r")
+        or msg:match("%[.-%]")
+    if not link then return false end
+
+    local text = VaultIconString(frame) .. " " .. VAULT_LABEL .. " " .. link
+    if count > 1 then
+        text = text .. "|cffffffff x" .. count .. "|r"
+    end
+    return false, text .. ".", ...
+end
+
+ChatFrame_AddMessageEventFilter("CHAT_MSG_LOOT", VaultLootFilter)
 
 -- ============================================================================
 -- Event Frame

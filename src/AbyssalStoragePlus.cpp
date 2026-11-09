@@ -366,6 +366,11 @@ void AbyssalStoragePlusMgr::SendItemDelete(Player* player, uint32 itemEntry)
     SendAddonMessage(player, "DEL:" + std::to_string(itemEntry));
 }
 
+void AbyssalStoragePlusMgr::SendVaultNotice(Player* player, uint32 itemEntry, uint32 count)
+{
+    SendAddonMessage(player, "VAULT:" + std::to_string(itemEntry) + "," + std::to_string(count));
+}
+
 // Collect every online character on the account
 static std::vector<Player*> GetAccountPlayers(uint32 accountId)
 {

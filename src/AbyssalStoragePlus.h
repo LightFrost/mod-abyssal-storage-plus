@@ -83,6 +83,7 @@ public:
     void SendFullSync(Player* player);
     void SendItemUpdate(Player* player, uint32 itemEntry, uint32 count);
     void SendItemDelete(Player* player, uint32 itemEntry);
+    void SendVaultNotice(Player* player, uint32 itemEntry, uint32 count);
     void BroadcastItemUpdate(uint32 accountId, uint32 itemEntry);
     void BroadcastFullSync(uint32 accountId);
 

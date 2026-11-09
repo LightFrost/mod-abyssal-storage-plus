@@ -256,6 +256,7 @@ public:
 
         // Defer the deposit — destroying items inside this hook crashes the server
         // Use count (newly added) not item->GetCount() (merged stack size)
+        sAbyssalStoragePlusMgr->SendVaultNotice(player, item->GetEntry(), count);
         data->pendingDeposits.push_back({ item->GetEntry(), count });
     }
 
