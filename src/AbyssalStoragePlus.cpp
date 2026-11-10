@@ -75,6 +75,7 @@ void AbyssalStoragePlusMgr::UnloadAccountData(uint32 accountId)
 
     _storage.erase(accountId);
     _loadedAccounts.erase(accountId);
+    _settings.erase(accountId);
 }
 
 void AbyssalStoragePlusMgr::DepositItem(uint32 accountId, uint32 itemEntry, uint32 count)
@@ -223,6 +224,44 @@ bool AbyssalStoragePlusMgr::ShouldAutoStore(Player* player, ItemTemplate const* 
     return true;
 }
 
+AbyssalSettings const& AbyssalStoragePlusMgr::GetSettings(uint32 accountId) const
+{
+    static AbyssalSettings const defaults;
+    auto it = _settings.find(accountId);
+    return it != _settings.end() ? it->second : defaults;
+}
+
+void AbyssalStoragePlusMgr::SetSettings(uint32 accountId, AbyssalSettings const& settings)
+{
+    _settings[accountId] = settings;
+}
+
+bool AbyssalStoragePlusMgr::IsAutoVaultEnabled(uint32 accountId, AbyssalAcquireSource source) const
+{
+    AbyssalSettings const& settings = GetSettings(accountId);
+
+    switch (source)
+    {
+        case AbyssalAcquireSource::Loot:
+            return settings.autoVaultLoot;
+        case AbyssalAcquireSource::Craft:
+            return settings.autoVaultCraft;
+        case AbyssalAcquireSource::Mail:
+            return settings.autoVaultMail;
+        case AbyssalAcquireSource::QuestReward:
+            return settings.autoVaultQuestReward;
+        case AbyssalAcquireSource::Vendor:
+            return settings.autoVaultVendor;
+        default:
+            return false;
+    }
+}
+
+bool AbyssalStoragePlusMgr::IsAutoWithdrawQuestAcceptEnabled(uint32 accountId) const
+{
+    return GetSettings(accountId).autoWithdrawQuestAccept;
+}
+
 bool AbyssalStoragePlusMgr::IsBotAccount(Player* player)
 {
     if (!player || !player->GetSession())
@@ -369,6 +408,11 @@ void AbyssalStoragePlusMgr::SendItemDelete(Player* player, uint32 itemEntry)
 void AbyssalStoragePlusMgr::SendVaultNotice(Player* player, uint32 itemEntry, uint32 count)
 {
     SendAddonMessage(player, "VAULT:" + std::to_string(itemEntry) + "," + std::to_string(count));
+}
+
+void AbyssalStoragePlusMgr::SendVaultNotification(Player* player, uint32 itemEntry, uint32 count)
+{
+    SendAddonMessage(player, "VAULTN:" + std::to_string(itemEntry) + "," + std::to_string(count));
 }
 
 // Collect every online character on the account

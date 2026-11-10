@@ -30,10 +30,33 @@ inline bool IsAbyssalToolItem(uint32 itemId)
         || itemId == ABYSSAL_ITEM_SIMPLE_GRINDER;
 }
 
+// Where a newly stored item came from
+enum class AbyssalAcquireSource : uint8
+{
+    Unknown = 0,
+    Loot = 1,
+    Craft = 2,
+    Mail = 3,
+    QuestReward = 4,
+    Vendor = 5,
+};
+
+// Player-facing vault behaviour, synced from the addon
+struct AbyssalSettings
+{
+    bool autoVaultLoot = true;
+    bool autoVaultCraft = false;
+    bool autoVaultMail = false;
+    bool autoVaultQuestReward = false;
+    bool autoVaultVendor = false;
+    bool autoWithdrawQuestAccept = true;
+};
+
 struct PendingDeposit
 {
     uint32 itemEntry;
     uint32 count;
+    AbyssalAcquireSource source = AbyssalAcquireSource::Unknown;
 };
 
 // Tracks one vault-pulled stack; baseline is bag count before the pull
@@ -52,6 +75,8 @@ struct AbyssalPlayerData : public DataMap::Base
     std::vector<PendingDeposit> pendingDeposits; // deferred auto-deposits
     uint32 pendingCrafts = 0;    // remaining crafts in a multi-craft batch
     uint32 pendingSpellId = 0;   // spell ID for multi-craft batch
+    AbyssalAcquireSource pendingSource = AbyssalAcquireSource::Unknown; // next store's source
+    uint32 pendingSourceTime = 0; // unix time the source tag was set
 };
 
 AbyssalPlayerData* GetAbyssalData(Player* player);
@@ -78,20 +103,24 @@ public:
 
     bool IsBotAccount(Player* player);
 
+    // Per-account settings, pushed by the addon
+    AbyssalSettings const& GetSettings(uint32 accountId) const;
+    void SetSettings(uint32 accountId, AbyssalSettings const& settings);
+    bool IsAutoVaultEnabled(uint32 accountId, AbyssalAcquireSource source) const;
+    bool IsAutoWithdrawQuestAcceptEnabled(uint32 accountId) const;
+
     // Messaging helpers
     void SendAddonMessage(Player* player, std::string const& message);
     void SendFullSync(Player* player);
     void SendItemUpdate(Player* player, uint32 itemEntry, uint32 count);
     void SendItemDelete(Player* player, uint32 itemEntry);
     void SendVaultNotice(Player* player, uint32 itemEntry, uint32 count);
+    void SendVaultNotification(Player* player, uint32 itemEntry, uint32 count);
     void BroadcastItemUpdate(uint32 accountId, uint32 itemEntry);
     void BroadcastFullSync(uint32 accountId);
 
     bool IsEnabled() const { return _enabled; }
     void SetEnabled(bool enabled) { _enabled = enabled; }
-
-    bool IsAutoUnvaultQuestItemsEnabled() const { return _autoUnvaultQuestItems; }
-    void SetAutoUnvaultQuestItems(bool enabled) { _autoUnvaultQuestItems = enabled; }
 
 private:
     AbyssalStoragePlusMgr() = default;
@@ -105,7 +134,7 @@ private:
     std::unordered_map<uint32, bool> _botAccountCache;
 
     bool _enabled = true;
-    bool _autoUnvaultQuestItems = true;
+    std::unordered_map<uint32, AbyssalSettings> _settings; // accountId -> settings
 };
 
 #define sAbyssalStoragePlusMgr AbyssalStoragePlusMgr::instance()

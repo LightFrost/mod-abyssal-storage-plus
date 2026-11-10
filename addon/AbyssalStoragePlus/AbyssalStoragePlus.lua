@@ -177,6 +177,8 @@ function AbyssalStoragePlus:HandleMessage(msg)
         self:HandleError(payload)
     elseif cmd == "VAULT" then
         self:HandleVaultNotice(payload)
+    elseif cmd == "VAULTN" then
+        self:HandleVaultNotification(payload)
     end
 end
 
@@ -279,7 +281,7 @@ local function VaultIconString(frame)
 end
 
 -- Server announces auto-vaulted items before the client prints them
-local pendingVaults = {} -- [itemEntry] = { count = n, at = GetTime() }
+clocal pendingVaults = {} -- [itemEntry] = { count = n, at = GetTime() }
 
 function AbyssalStoragePlus:HandleVaultNotice(payload)
     local entry = payload and tonumber(payload:match("^(%d+)"))
@@ -297,6 +299,24 @@ function AbyssalStoragePlus:HandleVaultNotice(payload)
     end
     pending.count = pending.count + 1
     pending.at = now
+end
+
+-- Standalone notice for vaults with no game chat line (mail, quest reward)
+function AbyssalStoragePlus:HandleVaultNotification(payload)
+    local entry = payload and tonumber(payload:match("^(%d+)"))
+    if not entry then return end
+
+    local link = select(2, GetItemInfo(entry))
+    if not link then return end
+
+    local count = tonumber(payload:match(",(%d+)")) or 1
+    self:PlayItemSound(entry)
+
+    local text = VaultIconString(DEFAULT_CHAT_FRAME) .. " " .. VAULT_LABEL .. " " .. link
+    if count > 1 then
+        text = text .. "|cffffffff x" .. count .. "|r"
+    end
+    DEFAULT_CHAT_FRAME:AddMessage(text .. ".")
 end
 
 -- Turn a global format string into a pattern with lazy link capture

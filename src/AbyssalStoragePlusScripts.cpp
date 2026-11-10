@@ -13,6 +13,7 @@
 #include "SpellMgr.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include <ctime>
 #include <sstream>
 
 // Build a clickable item link like "|cff1eff00|Hitem:2589:0:0:0:0:0:0:0:0:0|h[Linen Cloth]|h|r"
@@ -179,8 +180,6 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         sAbyssalStoragePlusMgr->SetEnabled(sConfigMgr->GetOption<bool>("AbyssalStoragePlus.Enable", true));
-        sAbyssalStoragePlusMgr->SetAutoUnvaultQuestItems(
-            sConfigMgr->GetOption<bool>("AbyssalStoragePlus.AutoUnvaultQuestItems", true));
     }
 };
 
@@ -196,7 +195,12 @@ public:
         PLAYERHOOK_ON_LOGOUT,
         PLAYERHOOK_ON_UPDATE,
         PLAYERHOOK_ON_STORE_NEW_ITEM,
-        PLAYERHOOK_ON_PLAYER_QUEST_ACCEPT
+        PLAYERHOOK_ON_PLAYER_QUEST_ACCEPT,
+        PLAYERHOOK_ON_SPELL_CAST,
+        PLAYERHOOK_ON_QUEST_REWARD_ITEM,
+        PLAYERHOOK_ON_AFTER_TAKE_ITEM_FROM_MAIL,
+        PLAYERHOOK_ON_BEFORE_STORE_OR_EQUIP_NEW_ITEM,
+        PLAYERHOOK_ON_CREATE_ITEM
     }) { }
 
     void OnPlayerLogin(Player* player) override
@@ -242,6 +246,12 @@ public:
         if (!data || !data->autoStoreEnabled)
             return;
 
+        // Take the source tag before any early-out so it cannot leak
+        AbyssalAcquireSource source = data->pendingSource;
+        uint32 sourceTime = data->pendingSourceTime;
+        data->pendingSource = AbyssalAcquireSource::Unknown;
+        data->pendingSourceTime = 0;
+
         // Don't auto-store items being materialized from vault
         if (data->isMaterializing)
             return;
@@ -254,10 +264,133 @@ public:
         if (!sAbyssalStoragePlusMgr->ShouldAutoStore(player, itemTemplate))
             return;
 
-        // Defer the deposit — destroying items inside this hook crashes the server
-        // Use count (newly added) not item->GetCount() (merged stack size)
-        sAbyssalStoragePlusMgr->SendVaultNotice(player, item->GetEntry(), count);
-        data->pendingDeposits.push_back({ item->GetEntry(), count });
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        // An open loot window means this item was just looted
+        if (!player->GetLootGUID().IsEmpty())
+            source = AbyssalAcquireSource::Loot;
+        else if (source != AbyssalAcquireSource::Unknown && time(nullptr) - sourceTime > 10)
+            source = AbyssalAcquireSource::Unknown; // stale tag
+
+        // Send the notice before the client prints its own chat line
+        if (sAbyssalStoragePlusMgr->IsAutoVaultEnabled(accountId, source))
+            sAbyssalStoragePlusMgr->SendVaultNotice(player, item->GetEntry(), count);
+
+        // Defer the deposit; OnPlayerUpdate gates it by the resolved source
+        data->pendingDeposits.push_back({ item->GetEntry(), count, source });
+    }
+
+    void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !spell)
+            return;
+
+        SpellInfo const* spellInfo = spell->GetSpellInfo();
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!spellInfo || !data)
+            return;
+
+        // Tag the next store so crafted items use the craft setting
+        if (spellInfo->HasAttribute(SPELL_ATTR0_IS_TRADESKILL))
+        {
+            data->pendingSource = AbyssalAcquireSource::Craft;
+            data->pendingSourceTime = static_cast<uint32>(time(nullptr));
+        }
+    }
+
+    void OnPlayerBeforeStoreOrEquipNewItem(Player* player, uint32 /*vendorslot*/, uint32& /*item*/,
+        uint8 /*count*/, uint8 /*bag*/, uint8 /*slot*/, ItemTemplate const* /*pProto*/,
+        Creature* /*pVendor*/, VendorItem const* /*crItem*/, bool bStore) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !bStore)
+            return;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data)
+            return;
+
+        // Tag the store that follows so vendor buys use the vendor setting
+        data->pendingSource = AbyssalAcquireSource::Vendor;
+        data->pendingSourceTime = static_cast<uint32>(time(nullptr));
+    }
+
+    void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 count) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !item)
+            return;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data)
+            return;
+
+        // Tag the just-stored candidate so the quest setting applies
+        bool tagged = false;
+        for (auto it = data->pendingDeposits.rbegin(); it != data->pendingDeposits.rend(); ++it)
+        {
+            if (it->source == AbyssalAcquireSource::Unknown &&
+                it->itemEntry == item->GetEntry() && it->count == count)
+            {
+                it->source = AbyssalAcquireSource::QuestReward;
+                tagged = true;
+                break;
+            }
+        }
+
+        // Quest rewards print no loot line, so notify the client directly
+        if (tagged && sAbyssalStoragePlusMgr->IsAutoVaultEnabled(
+                player->GetSession()->GetAccountId(), AbyssalAcquireSource::QuestReward))
+            sAbyssalStoragePlusMgr->SendVaultNotification(player, item->GetEntry(), count);
+    }
+
+    void OnPlayerCreateItem(Player* player, Item* item, uint32 count) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !item)
+            return;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data)
+            return;
+
+        // Crafted items pass through here right after the store
+        for (auto it = data->pendingDeposits.rbegin(); it != data->pendingDeposits.rend(); ++it)
+        {
+            if (it->source == AbyssalAcquireSource::Unknown &&
+                it->itemEntry == item->GetEntry() && it->count == count)
+            {
+                it->source = AbyssalAcquireSource::Craft;
+                break;
+            }
+        }
+    }
+
+    void OnPlayerAfterTakeItemFromMail(Player* player, Item* item, uint32 count) override
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !item)
+            return;
+
+        if (sAbyssalStoragePlusMgr->IsBotAccount(player))
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        if (!sAbyssalStoragePlusMgr->IsAutoVaultEnabled(accountId, AbyssalAcquireSource::Mail))
+            return;
+
+        AbyssalPlayerData* data = GetAbyssalData(player);
+        if (!data || data->isMaterializing)
+            return;
+
+        if (data->materializedItems.count(item->GetEntry()))
+            return;
+
+        ItemTemplate const* itemTemplate = item->GetTemplate();
+        if (!sAbyssalStoragePlusMgr->ShouldAutoStore(player, itemTemplate))
+            return;
+
+        // Mail items never reach OnPlayerStoreNewItem, so queue them here
+        data->pendingDeposits.push_back({ item->GetEntry(), count, AbyssalAcquireSource::Mail });
+
+        // Mail prints no loot line, so notify the client directly
+        sAbyssalStoragePlusMgr->SendVaultNotification(player, item->GetEntry(), count);
     }
 
     void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
@@ -285,6 +418,10 @@ public:
 
         for (auto const& dep : deposits)
         {
+            // Skip sources the player turned off in the settings
+            if (!sAbyssalStoragePlusMgr->IsAutoVaultEnabled(accountId, dep.source))
+                continue;
+
             // Verify the player still has the items (they may have been used/moved)
             uint32 playerHas = player->GetItemCount(dep.itemEntry);
             uint32 toDeposit = std::min(dep.count, playerHas);
@@ -314,7 +451,9 @@ public:
         if (!sAbyssalStoragePlusMgr->IsEnabled() || !player || !quest)
             return;
 
-        if (!sAbyssalStoragePlusMgr->IsAutoUnvaultQuestItemsEnabled())
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        if (!sAbyssalStoragePlusMgr->IsAutoWithdrawQuestAcceptEnabled(accountId))
             return;
 
         if (sAbyssalStoragePlusMgr->IsBotAccount(player))
@@ -328,7 +467,6 @@ public:
         if (quest->IsAutoComplete() || !quest->GetQuestMethod())
             return;
 
-        uint32 accountId = player->GetSession()->GetAccountId();
         AbyssalPlayerData* data = GetAbyssalData(player);
         bool previousAutoStore = data ? data->autoStoreEnabled : true;
         if (data)
@@ -601,6 +739,7 @@ public:
             { "withdraw", HandleWithdrawCommand,  SEC_PLAYER, Console::No },
             { "deposit",  HandleDepositCommand,   SEC_PLAYER, Console::No },
             { "sync",     HandleSyncCommand,      SEC_PLAYER, Console::No },
+            { "settings", HandleSettingsCommand, SEC_PLAYER, Console::No },
             { "craft",    HandleCraftCommand,      SEC_PLAYER, Console::No },
             { "prepare",  HandlePrepareCommand,    SEC_PLAYER, Console::No },
             { "revault",  HandleRevaultCommand,    SEC_PLAYER, Console::No },
@@ -1002,6 +1141,33 @@ public:
         return true;
     }
 
+    // .asp settings <loot> <craft> <mail> <quest> <vendor> <accept>
+    // Each value is 0 or 1; sent by the addon options panel
+    static bool HandleSettingsCommand(ChatHandler* handler, uint32 loot, uint32 craft, uint32 mail,
+                                      uint32 quest, uint32 vendor, uint32 accept)
+    {
+        if (!sAbyssalStoragePlusMgr->IsEnabled())
+            return false;
+
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        AbyssalSettings settings;
+        settings.autoVaultLoot = loot != 0;
+        settings.autoVaultCraft = craft != 0;
+        settings.autoVaultMail = mail != 0;
+        settings.autoVaultQuestReward = quest != 0;
+        settings.autoVaultVendor = vendor != 0;
+        settings.autoWithdrawQuestAccept = accept != 0;
+
+        sAbyssalStoragePlusMgr->SetSettings(accountId, settings);
+        handler->PSendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Settings saved.");
+        return true;
+    }
+
     // .asp craft <spellId> [count]
     // Materializes reagents from vault and casts the crafting spell
     static bool HandleCraftCommand(ChatHandler* handler, uint32 spellId, Optional<uint32> optCount)
@@ -1214,7 +1380,6 @@ public:
         if (data)
         {
             data->isMaterializing = false;
-            data->autoStoreEnabled = false; // prevent re-deposit of withdrawn reagents
             data->pendingCrafts = craftCount;  // OnSpellCast will decrement and re-cast
             data->pendingSpellId = spellId;
         }
