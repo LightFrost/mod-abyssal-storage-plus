@@ -40,7 +40,8 @@ If migrating from this mod, just replace the module & addon with mine. It still 
    
      **BEFORE:** <img width="194" height="81" alt="TitaniumBarOLD1" src="https://github.com/user-attachments/assets/9f6fad52-d4bd-4cdb-b772-966f2233b494" />
      **AFTER:** <img width="193" height="78" alt="TitaniumBar 9" src="https://github.com/user-attachments/assets/d61ae12a-1a1c-4502-a7a7-e10b87fb37cf" />
-
+- Added an addon settings menu to enable/disable vaulting materials based on aquisition method - (Loot/Craft/Mail/VendorBuy/QuestReward).
+- Better Auto-Vault visibility - Whenever an item is looted and instantly vaulted, replaces default "You receive loot:" system messages with "You vaulted  material:" system message instead. Works for all enabled acquisition methods.
 - The claimed quest integration (pull materials on quest turn-in) was non-functional. Added entirely new logic - Accepting a quest that requires materials will auto pull the full or partial amount of materials from your vault if they exist. Any looted materials that are required for active-quests are excluded from auto-deposit up to the required amount. Also prints an informative message, Example: "Abyssal Storage Plus: Pulled [Lean Wolf Flank] x8 from storage for quest [Seasoned Wolf Kabobs]; 2 still needed.".
 - For recipes that required a target item e.g. Enchanting, socket item; the original mod only pulled materials and gave an error on clicking the modify/enchant button. Plus version now pulls the materials preemptively on hovering over the "Enchant/Modify" button so that it only requires a single click to function. Selecting another recipe or exiting the profession UI returns pulled materials to the vault.
 - Cancelling a craft now instantly returns any pulled materials to your vault if they were unvaulted
@@ -66,6 +67,10 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 - <kbd>**NEW**</kbd> **Tools protected**: Profession tools and other outliers in the profession category are excluded from Deposit All (runed rods, Gnomish Army Knife, Jeweler's Kit etc.)
 - <kbd>**NEW**</kbd> **Vault Shortcuts**: `Shift + B` or click minimap icon to open bags + vault **/** `Ctrl + B` or right-click minimap icon to deposit all materials.
 - <kbd>**NEW**</kbd> **Dynamic Tooltip**: When hovering over a material in the vault, tooltip will dynamically show only if you own more of that item in your bags and how many you own.
+- <kbd>**NEW**</kbd> **Auto-Vault Options**: Addon options menu to Enable/Disable auto-vaulting materials based on obtain method -  (Loot/Craft/Mail/VendorBuy/QuestReward).
+- <kbd>**NEW**</kbd> **Auto-Vault Visibility**: Based on the Enabled options set above, you will get notified by a system message in chat whenever a material is vaulted. 
+  - Example Message: <img width="340" height="29" alt="Vaulted Material Notifcation" src="https://github.com/user-attachments/assets/ee2dd4ac-0cc3-44c3-abce-47c1879536cb" />
+
 
 ## Opening the Vault
 - Right-clicking the backpack
@@ -101,11 +106,11 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 </details>
 <img width="959" height="718" alt="Window 1586 01-11-2026 (World_of_Warcraft)" src="https://github.com/user-attachments/assets/9c404bdb-e81b-493b-a3d6-52214dce5d71" />
 
-### Blizzard Frames + Classic UI
-<img width="1449" height="713" alt="BlizzardUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/7f448223-55c3-44e0-a718-aa4182c56402" />
-
 ### ElvUI Frames + Classic UI
 <img width="1583" height="562" alt="ElvUI-Abyssal-Storage" src="https://github.com/user-attachments/assets/a9e4ff26-75f8-4f6e-9fef-4c6e6ebf54e8" />
+
+### Options Menu + Defaults
+<img width="365" height="275" alt="Window 1654 10-11-2026 (World_of_Warcraft)" src="https://github.com/user-attachments/assets/66983f8e-07a6-4967-95cc-a52323a4296c" />
 
 
 ## Commands
@@ -122,7 +127,6 @@ In `mod_abyssal_storage_plus.conf`:
 
 ```
 AbyssalStoragePlus.Enable = 1
-AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 ```
 
 ## Installation
@@ -134,8 +138,16 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 
 ## Changelog
 
+### 2026-11-10
+- Added an addon options menu to enable/disable auto-vaulting materials based on acquisition method - (Loot/Craft/Mail/VendorBuy/QuestReward).
+- Improved upon addon system messaging to handle all acquisition methods isntead of only looted materials.
+
+### 2026-11-09
+- Overwrite default blizzard system loot messages to show when a materials gets vaulted instead of looted to bags, improving clarity.
+
 ### 2026-11-08
 - Performance improvements, Reduce vault UI redraws and quest-log scans.
+- Second round of performance improvements & minor code improvements.
 
 ### 2026-11-07
 - Refactor some logic and clean up code.
@@ -152,6 +164,9 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 - Replaced the broken quest turn-in auto-pull with a reliable quest-accept auto-unvault.
 - Added a chat warning when a required material can't be pulled because of low bag space.
 
+<details>
+<Summary> Click to see older commits</summary>
+
 ### 2026-11-04
 - Quest items are now better protected during Deposit All.
 - Pulled materials are returned to the vault if bag space runs out mid-craft.
@@ -162,9 +177,6 @@ AbyssalStoragePlus.AutoUnvaultQuestItems = 1
 ### 2026-11-03
 - Fixed the "Craftable Quantity" counter sometimes not updating.
 - Added revaulting of materials when cancelling a craft.
-
-<details>
-<Summary> Click to see older commits</summary>
 
 ### 2026-11-02
 - Improved tooltip item counts.
