@@ -103,6 +103,87 @@ static void RevaultMaterializedItems(Player* player, AbyssalPlayerData* data, ui
     data->isMaterializing = false;
 }
 
+// Item-target recipes (enchanting, socketting) are cast on an item
+static bool IsItemTargetSpell(Spell const* spell)
+{
+    return !spell->m_targets.GetItemTargetGUID().IsEmpty();
+}
+
+// Whether the player's bags alone can pay for one craft of this spell
+static bool BagsCanCoverCraft(Player* player, SpellInfo const* spellInfo)
+{
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        int32 entry = spellInfo->Reagent[i];
+        uint32 need = spellInfo->ReagentCount[i];
+        if (entry <= 0 || need == 0)
+            continue;
+
+        if (player->GetItemCount(entry) < need)
+            return false;
+    }
+
+    return true;
+}
+
+// Whether bags plus the vault can pay for one craft of this spell
+static bool CanCoverCraftReagents(Player* player, SpellInfo const* spellInfo, uint32 accountId)
+{
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        int32 entry = spellInfo->Reagent[i];
+        uint32 need = spellInfo->ReagentCount[i];
+        if (entry <= 0 || need == 0)
+            continue;
+
+        uint32 has = player->GetItemCount(entry);
+        if (has >= need)
+            continue;
+
+        if (sAbyssalStoragePlusMgr->GetItemCount(accountId, entry) < need - has)
+            return false;
+    }
+
+    return true;
+}
+
+// Pay the reagent cost of one craft: bags first, then the vault. Takes whatever
+// is available and returns the amount that could not be covered.
+static uint32 TakeCraftReagents(Player* player, SpellInfo const* spellInfo, uint32 accountId)
+{
+    uint32 shortfall = 0;
+
+    for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        int32 entry = spellInfo->Reagent[i];
+        uint32 need = spellInfo->ReagentCount[i];
+        if (entry <= 0 || need == 0)
+            continue;
+
+        uint32 has = player->GetItemCount(entry);
+        uint32 fromBags = std::min(has, need);
+        if (fromBags > 0)
+            player->DestroyItemCount(entry, fromBags, true);
+
+        uint32 deficit = need - fromBags;
+        uint32 vaultHas = sAbyssalStoragePlusMgr->GetItemCount(accountId, entry);
+        uint32 fromVault = std::min(deficit, vaultHas);
+        if (fromVault > 0)
+            sAbyssalStoragePlusMgr->WithdrawItem(accountId, entry, fromVault);
+
+        if (fromVault < deficit)
+            shortfall += deficit - fromVault;
+
+        uint32 remaining = sAbyssalStoragePlusMgr->GetItemCount(accountId, entry);
+        if (remaining > 0)
+            sAbyssalStoragePlusMgr->SendItemUpdate(player, entry, remaining);
+        else
+            sAbyssalStoragePlusMgr->SendItemDelete(player, entry);
+    }
+
+    return shortfall;
+}
+
 // Push current bag+vault totals for each reagent of a spell
 static void SendSpellReagentTotals(Player* player, SpellInfo const* spellInfo, uint32 accountId)
 {
@@ -351,6 +432,22 @@ public:
         if (!data)
             return;
 
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Pay for a vault-backed craft now that its product actually exists
+        if (data->craftPayPending && data->pendingSpellId != 0)
+        {
+            data->craftPayPending = false;
+
+            if (SpellInfo const* craftInfo = sSpellMgr->GetSpellInfo(data->pendingSpellId))
+            {
+                uint32 shortfall = TakeCraftReagents(player, craftInfo, accountId);
+                if (shortfall > 0)
+                    ChatHandler(player->GetSession()).SendSysMessage(
+                        "|cFF00B0E8Abyssal Storage Plus:|r Craft completed but the vault could not cover every reagent.");
+            }
+        }
+
         // Crafted items pass through here right after the store
         for (auto it = data->pendingDeposits.rbegin(); it != data->pendingDeposits.rend(); ++it)
         {
@@ -400,7 +497,35 @@ public:
 
         // Cheap early-out: only players with deferred deposits need any work
         AbyssalPlayerData* data = player->CustomData.Get<AbyssalPlayerData>(ABYSSAL_DATA_KEY);
-        if (!data || data->pendingDeposits.empty())
+        if (!data)
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Re-cast an intercepted item-target recipe without a reagent cost
+        if (data->pendingRecastSpell != 0)
+        {
+            uint32 recastSpell = data->pendingRecastSpell;
+            uint64 recastItemGuid = data->pendingRecastItemGuid;
+            data->pendingRecastSpell = 0;
+            data->pendingRecastItemGuid = 0;
+
+            SpellCastTargets targets;
+            if (recastItemGuid != 0)
+                if (Item* item = player->GetItemByGuid(ObjectGuid(recastItemGuid)))
+                    targets.SetItemTarget(item);
+
+            SpellCastResult result = player->CastSpell(targets, sSpellMgr->GetSpellInfo(recastSpell), nullptr,
+                TRIGGERED_IGNORE_POWER_AND_REAGENT_COST);
+            if (result != SPELL_CAST_OK)
+            {
+                data->pendingReagentSpell = 0;
+                ChatHandler(player->GetSession()).SendSysMessage(
+                    "|cFF00B0E8Abyssal Storage Plus:|r Could not complete the craft; nothing was taken.");
+            }
+        }
+
+        if (data->pendingDeposits.empty())
             return;
 
         if (sAbyssalStoragePlusMgr->IsBotAccount(player))
@@ -409,8 +534,6 @@ public:
         // Move pending list out so we don't re-enter if DestroyItemCount triggers hooks
         std::vector<PendingDeposit> deposits = std::move(data->pendingDeposits);
         data->pendingDeposits.clear();
-
-        uint32 accountId = player->GetSession()->GetAccountId();
 
         // One quest-log scan for the whole batch
         std::unordered_map<uint32, uint32> questReserved;
@@ -538,6 +661,10 @@ public:
         if (!sAbyssalStoragePlusMgr->IsEnabled())
             return;
 
+        // Our own vault-backed casts already paid for their reagents
+        if (spell->HasTriggeredCastFlag(TRIGGERED_IGNORE_POWER_AND_REAGENT_COST))
+            return;
+
         if (res != SPELL_CAST_OK)
             return;
 
@@ -570,6 +697,20 @@ public:
         AbyssalPlayerData* data = GetAbyssalData(player);
         if (!data)
             return;
+
+        // Item-target recipes (enchanting, socketting) cannot be driven from a chat
+        // command: take the reagents here and re-cast without a reagent cost.
+        if (IsItemTargetSpell(spell))
+        {
+            if (!BagsCanCoverCraft(player, spellInfo) && CanCoverCraftReagents(player, spellInfo, accountId))
+            {
+                res = SPELL_FAILED_DONT_REPORT;
+                data->pendingRecastSpell = spellInfo->Id;
+                data->pendingRecastItemGuid = spell->m_targets.GetItemTargetGUID().GetRawValue();
+                data->pendingReagentSpell = spellInfo->Id;
+            }
+            return;
+        }
 
         // First pass: verify vault can cover all deficits before materializing anything
         for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
@@ -664,25 +805,50 @@ public:
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
-        if (!data || data->materializedItems.empty())
+        if (!data)
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
 
-        // Refresh totals now that this craft consumed its reagents
-        SendSpellReagentTotals(player, spellInfo, accountId);
+        // A vault-backed craft whose product never appeared owes nothing
+        data->craftPayPending = false;
 
-        // Multi-craft: if more crafts remain, queue the next one instead of re-vaulting
+        // Pay for an item-target craft now that it has been applied
+        if (data->pendingReagentSpell == spellInfo->Id)
+        {
+            data->pendingReagentSpell = 0;
+
+            uint32 shortfall = TakeCraftReagents(player, spellInfo, accountId);
+            if (shortfall > 0)
+                ChatHandler(player->GetSession()).SendSysMessage(
+                    "|cFF00B0E8Abyssal Storage Plus:|r Craft completed but the vault could not cover every reagent.");
+        }
+
+        // Chained crafts from .asp craft: queue the next one and let its product pay
         if (data->pendingCrafts > 0 && data->pendingSpellId == spellInfo->Id)
         {
             data->pendingCrafts--;
-            if (data->pendingCrafts > 0)
-            {
-                player->CastSpell(player, data->pendingSpellId, false);
-                return; // don't re-vault yet
-            }
-            // Last craft done — fall through to re-vault leftovers
+            data->craftPayPending = true;
+
+            player->CastSpell(player, data->pendingSpellId, TRIGGERED_IGNORE_POWER_AND_REAGENT_COST);
+            return;
         }
+
+        if (data->pendingSpellId != 0)
+        {
+            data->pendingSpellId = 0;
+            data->pendingCrafts = 0;
+        }
+
+        // Leftovers from the materialization path (.asp prepare / direct casts)
+        if (data->materializedItems.empty())
+        {
+            data->autoStoreEnabled = true;
+            return;
+        }
+
+        // Refresh totals now that this craft consumed its reagents
+        SendSpellReagentTotals(player, spellInfo, accountId);
 
         // Re-vault any materialized items that are still in inventory (leftovers)
         RevaultMaterializedItems(player, data, accountId);
@@ -705,10 +871,22 @@ public:
             return;
 
         AbyssalPlayerData* data = GetAbyssalData(player);
-        if (!data || data->materializedItems.empty())
+        if (!data)
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
+
+        // Nothing is taken for a vault-backed craft that never completed
+        data->craftPayPending = false;
+        data->pendingReagentSpell = 0;
+        data->pendingCrafts = 0;
+        data->pendingSpellId = 0;
+
+        if (data->materializedItems.empty())
+        {
+            data->autoStoreEnabled = true;
+            return;
+        }
 
         // Send the pre-revault total (invariant) before bags shrink
         SendSpellReagentTotals(player, spellInfo, accountId);
@@ -1247,37 +1425,34 @@ public:
             reagents.push_back({ reagentEntry, reagentCount, playerHas, vaultHas, maxStack });
         }
 
-        // Count free bag slots
-        uint32 freeSlots = 0;
-        for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        // The crafted product needs one free bag slot; reagents come from the vault
+        bool needsProductSlot = false;
+        bool productFits = true;
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
         {
-            if (!player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-                freeSlots++;
-        }
-        for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
-        {
-            if (Bag* pBag = player->GetBagByPos(bag))
+            if (spellInfo->Effects[i].Effect != SPELL_EFFECT_CREATE_ITEM &&
+                spellInfo->Effects[i].Effect != SPELL_EFFECT_CREATE_ITEM_2)
+                continue;
+
+            uint32 productEntry = spellInfo->Effects[i].ItemType;
+            if (productEntry == 0)
+                continue;
+
+            needsProductSlot = true;
+
+            ItemPosCountVec dest;
+            if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, productEntry, 1) == EQUIP_ERR_OK)
             {
-                for (uint8 slot = 0; slot < pBag->GetBagSize(); ++slot)
-                {
-                    if (!pBag->GetItemByPos(slot))
-                        freeSlots++;
-                }
+                productFits = true;
+                break;
             }
+
+            productFits = false;
         }
 
-        // Count how many distinct reagents need vault withdrawal
-        uint32 vaultReagentSlots = 0;
-        for (auto const& r : reagents)
+        if (needsProductSlot && !productFits)
         {
-            if (r.playerHas < r.perCraft)
-                vaultReagentSlots++;
-        }
-
-        // Need: 1 slot per vault reagent type + 1 for the crafted product
-        if (freeSlots < vaultReagentSlots + 1)
-        {
-            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space (need room for reagents + product).");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space for the crafted item.");
             return true;
         }
 
@@ -1286,19 +1461,6 @@ public:
         for (auto const& r : reagents)
         {
             uint32 possible = (r.playerHas + r.vaultHas) / r.perCraft;
-            maxCrafts = std::min(maxCrafts, possible);
-        }
-
-        // Cap further: each vault reagent gets at most 1 max-stack of bag space,
-        // so the amount we can withdraw is limited
-        for (auto const& r : reagents)
-        {
-            if (r.playerHas >= r.perCraft * maxCrafts)
-                continue; // inventory alone covers this reagent for maxCrafts
-
-            // Available in bags = what player already has + up to 1 max stack from vault
-            uint32 availableInBags = r.playerHas + std::min(r.vaultHas, r.maxStack);
-            uint32 possible = availableInBags / r.perCraft;
             maxCrafts = std::min(maxCrafts, possible);
         }
 
@@ -1311,92 +1473,33 @@ public:
         craftCount = std::min(craftCount, maxCrafts);
 
         AbyssalPlayerData* data = GetAbyssalData(player);
-        if (data)
-            data->isMaterializing = true;
 
-        // Materialize reagents needed for craftCount crafts (at most 1 stack per type)
-        for (auto const& r : reagents)
+        // Reagents are only taken once the product appears (OnPlayerCreateItem),
+        // so a cancelled or failed craft costs nothing
+        if (!CanCoverCraftReagents(player, spellInfo, accountId))
         {
-            uint32 totalNeeded = r.perCraft * craftCount;
-            if (r.playerHas >= totalNeeded)
-                continue;
-
-            uint32 deficit = totalNeeded - r.playerHas;
-            uint32 toWithdraw = std::min(deficit, r.vaultHas);
-            if (toWithdraw == 0)
-                continue;
-
-            // Send invariant total before the bag packet to avoid a count flicker
-            sAbyssalStoragePlusMgr->SendItemUpdate(player, r.entry,
-                sAbyssalStoragePlusMgr->GetItemCount(accountId, r.entry));
-
-            ItemPosCountVec dest;
-            InventoryResult invResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, r.entry, toWithdraw);
-            if (invResult != EQUIP_ERR_OK)
-            {
-                // Roll back reagents pulled for earlier types
-                if (data)
-                {
-                    RevaultMaterializedItems(player, data, accountId);
-                    data->isMaterializing = false;
-                }
-                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space for reagents.");
-                return true;
-            }
-
-            uint32 bagBefore = player->GetItemCount(r.entry);
-            Item* newItem = player->StoreNewItem(dest, r.entry, true);
-            if (!newItem)
-            {
-                // Roll back reagents pulled for earlier types
-                if (data)
-                {
-                    RevaultMaterializedItems(player, data, accountId);
-                    data->isMaterializing = false;
-                }
-                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough bag space for reagents.");
-                return true;
-            }
-
-            if (!sAbyssalStoragePlusMgr->WithdrawItem(accountId, uint32(r.entry), toWithdraw))
-            {
-                // Vault debit failed; undo exactly what was stored
-                UndoStoredItems(player, uint32(r.entry), bagBefore);
-                if (data)
-                {
-                    RevaultMaterializedItems(player, data, accountId);
-                    data->isMaterializing = false;
-                }
-                handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough stored reagents to craft.");
-                return true;
-            }
-
-            if (data)
-                TrackMaterializedItem(data, r.entry, r.playerHas, toWithdraw);
-
-            sAbyssalStoragePlusMgr->BroadcastItemUpdate(accountId, uint32(r.entry));
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Not enough reagents.");
+            return true;
         }
 
         if (data)
         {
-            data->isMaterializing = false;
-            data->pendingCrafts = craftCount;  // OnSpellCast will decrement and re-cast
+            data->craftPayPending = true;
+            data->pendingCrafts = craftCount - 1;  // OnSpellCast chains the rest
             data->pendingSpellId = spellId;
         }
 
-        // Cast once — OnSpellCast will chain the remaining crafts
-        SpellCastResult castResult = player->CastSpell(player, spellId, false);
+        // Cast without a reagent cost; OnSpellCast chains the remaining crafts
+        SpellCastResult castResult = player->CastSpell(player, spellId, TRIGGERED_IGNORE_POWER_AND_REAGENT_COST);
         if (castResult != SPELL_CAST_OK)
         {
-            // Return withdrawn reagents if the cast is rejected
             if (data)
             {
-                RevaultMaterializedItems(player, data, accountId);
+                data->craftPayPending = false;
                 data->pendingCrafts = 0;
                 data->pendingSpellId = 0;
-                data->autoStoreEnabled = true;
             }
-            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Recipe could not be cast; materials returned.");
+            handler->SendSysMessage("|cFF00B0E8Abyssal Storage Plus:|r Recipe could not be cast.");
         }
 
         return true;

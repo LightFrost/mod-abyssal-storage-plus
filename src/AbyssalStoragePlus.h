@@ -77,6 +77,10 @@ struct AbyssalPlayerData : public DataMap::Base
     uint32 pendingSpellId = 0;   // spell ID for multi-craft batch
     AbyssalAcquireSource pendingSource = AbyssalAcquireSource::Unknown; // next store's source
     uint32 pendingSourceTime = 0; // unix time the source tag was set
+    uint32 pendingRecastSpell = 0; // item-target recipe waiting for a re-cast
+    uint64 pendingRecastItemGuid = 0; // raw GUID of that recipe's item target
+    uint32 pendingReagentSpell = 0; // item-target craft that still owes reagents
+    bool craftPayPending = false; // vault-backed craft whose product awaits payment
 };
 
 AbyssalPlayerData* GetAbyssalData(Player* player);

@@ -281,7 +281,7 @@ local function VaultIconString(frame)
 end
 
 -- Server announces auto-vaulted items before the client prints them
-clocal pendingVaults = {} -- [itemEntry] = { count = n, at = GetTime() }
+local pendingVaults = {} -- [itemEntry] = { count = n, at = GetTime() }
 
 function AbyssalStoragePlus:HandleVaultNotice(payload)
     local entry = payload and tonumber(payload:match("^(%d+)"))

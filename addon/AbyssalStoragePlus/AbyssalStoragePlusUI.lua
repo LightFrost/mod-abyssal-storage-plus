@@ -1596,13 +1596,14 @@ local function WrappedDoTradeSkill(id, repeatCount)
         return origDoTradeSkill(id, repeatCount)
     end
 
-    -- These recipes cast on an item ("Enchant"/"Modify") and cannot be force-cast.
-    -- The client only starts targeting when the reagents are already in bags, so
-    -- if they are not ready yet, pull them now; the next click will cast.
+    -- Item-target recipes ("Enchant"/"Modify") are cast on an item. The client only
+    -- starts targeting when the reagents are in bags, so pull what is missing and
+    -- retry on the next click.
     if IsCastOnItemRecipe(id) then
         if ReagentsPresent(id) then
             return origDoTradeSkill(id, 1)
         end
+
         PrepareSelectedRecipe()
         return
     end
@@ -2003,7 +2004,7 @@ local function HookTradeSkill()
         InvalidateTradeCache()
     end)
 
-    -- Pull only when about to cast, so browsing recipes does not move materials
+    -- Pull reagents for item-target recipes on hover so the first click can cast
     if TradeSkillCreateButton then
         TradeSkillCreateButton:HookScript("OnEnter", PrepareSelectedRecipe)
         TradeSkillCreateButton:HookScript("OnMouseDown", PrepareSelectedRecipe)
