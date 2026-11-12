@@ -3,6 +3,7 @@
 #include "ChatCommand.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "Group.h"
 #include "Item.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -41,6 +42,20 @@ static std::string BuildQuestLink(Quest const* quest)
     ss << "|cffffff00|Hquest:" << quest->GetQuestId() << ":" << quest->GetQuestLevel();
     ss << "|h[" << quest->GetTitle() << "]|h|r";
     return ss.str();
+}
+
+// True while a group Need/Greed roll is handing out this item
+static bool IsGroupRollReward(Player* player, uint32 itemEntry)
+{
+    Group* group = player ? player->GetGroup() : nullptr;
+    if (!group)
+        return false;
+
+    for (Roll const* roll : group->GetRolls())
+        if (roll && roll->itemid == itemEntry)
+            return true;
+
+    return false;
 }
 
 // Record a vault pull plus the bag count before it
@@ -347,8 +362,11 @@ public:
 
         uint32 accountId = player->GetSession()->GetAccountId();
 
+        // Roll wins are handed to bags on purpose; never auto-store them
+        if (IsGroupRollReward(player, item->GetEntry()))
+            source = AbyssalAcquireSource::RollWin;
         // An open loot window means this item was just looted
-        if (!player->GetLootGUID().IsEmpty())
+        else if (!player->GetLootGUID().IsEmpty())
             source = AbyssalAcquireSource::Loot;
         else if (source != AbyssalAcquireSource::Unknown && time(nullptr) - sourceTime > 10)
             source = AbyssalAcquireSource::Unknown; // stale tag

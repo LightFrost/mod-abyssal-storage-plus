@@ -252,6 +252,8 @@ bool AbyssalStoragePlusMgr::IsAutoVaultEnabled(uint32 accountId, AbyssalAcquireS
             return settings.autoVaultQuestReward;
         case AbyssalAcquireSource::Vendor:
             return settings.autoVaultVendor;
+        case AbyssalAcquireSource::RollWin:
+            return false; // roll wins always stay in bags
         default:
             return false;
     }

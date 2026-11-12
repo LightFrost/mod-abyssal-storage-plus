@@ -39,6 +39,7 @@ enum class AbyssalAcquireSource : uint8
     Mail = 3,
     QuestReward = 4,
     Vendor = 5,
+    RollWin = 6, // Need/Greed roll wins go to bags, never the vault
 };
 
 // Player-facing vault behaviour, synced from the addon
