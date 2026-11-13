@@ -3,9 +3,9 @@
 **Account-wide interdimensional vault for all profession materials in AzerothCore (WoW WotLK 3.3.5)**
 
 ### How it works
-**Storing** - Automatically deposits looted/created profession materials into a shared account-wide vault. Your vaulted materials are visible and easily managed via the included addon.  
+**Storing** - Automatically deposits obtained profession materials into a shared account-wide vault. You can Enable/Disable what gets auto-deposited based on acquisition method (Loot/Craft/Mail/VendorBuy/QuestReward). Your vaulted materials are visible and easily managed via the included addon interface.  
 <br>
-**Crafting** - The profession crafting interface displays your vaulted materials seamlessly. Crafting automatically pulls required materials from the vault into your bags for that craft; cancelling a craft returns the materials to the vault.
+**Crafting** - The profession crafting interface displays your vaulted materials seamlessly. When crafting it automatically use materials straight from the vault. IF the recipe requires a target item (e.g. enchanting) it will pull materials to your bags first (hardcoded limitation).
 <br>
 
 <details>
@@ -26,8 +26,10 @@
 
 ---
 
-**This mod is based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**  
+**This mod was originally based on [mod-abyssal-storage](https://github.com/thanhtong89/mod-abyssal-storage)**
 If migrating from this mod, just replace the module & addon with mine. It still uses the same SQL database table name `abyssal_storage` so if you had items stored already, they will still be there.
+<details>
+<summary>>> <b> Click Here to see some of the major Differences </b> <<</summary>
 
 <table>
   <tr>
@@ -40,11 +42,11 @@ If migrating from this mod, just replace the module & addon with mine. It still 
    
      **BEFORE:** <img width="194" height="81" alt="TitaniumBarOLD1" src="https://github.com/user-attachments/assets/9f6fad52-d4bd-4cdb-b772-966f2233b494" />
      **AFTER:** <img width="193" height="78" alt="TitaniumBar 9" src="https://github.com/user-attachments/assets/d61ae12a-1a1c-4502-a7a7-e10b87fb37cf" />
+- <kbd>**MAJOR UPDATE**</kbd> Rewrote crafting so recipes no longer need materials pulled into your bags first on craft. Clicking **Create** or **Create All** crafts directly from your stored materials. Materials only deplete from the vault when a craft succeeds, so canceling costs nothing. 
 - Added an addon settings menu to enable/disable vaulting materials based on aquisition method - (Loot/Craft/Mail/VendorBuy/QuestReward).
 - Better Auto-Vault visibility - Whenever an item is looted and instantly vaulted, replaces default "You receive loot:" system messages with "You vaulted  material:" system message instead. Works for all enabled acquisition methods.
 - The claimed quest integration (pull materials on quest turn-in) was non-functional. Added entirely new logic - Accepting a quest that requires materials will auto pull the full or partial amount of materials from your vault if they exist. Any looted materials that are required for active-quests are excluded from auto-deposit up to the required amount. Also prints an informative message, Example: "Abyssal Storage Plus: Pulled [Lean Wolf Flank] x8 from storage for quest [Seasoned Wolf Kabobs]; 2 still needed.".
 - For recipes that required a target item e.g. Enchanting, socket item; the original mod only pulled materials and gave an error on clicking the modify/enchant button. Plus version now pulls the materials preemptively on hovering over the "Enchant/Modify" button so that it only requires a single click to function. Selecting another recipe or exiting the profession UI returns pulled materials to the vault.
-- Cancelling a craft now instantly returns any pulled materials to your vault if they were unvaulted
 - Added a new clean *modern interface* that sorts by profession instead of material type, this is the new default. see screenshots below, you can switch between Modern/Classic anytime by clicking the switch icon in the top-left.
 - Improved abyssal storage addon interface and functionality (Classic UI). Thanks to [Tntdruid](https://github.com/Tntdruid) for some of his contributions.
 - Now able to easily deposit per-material via right-click when abyssal storage interface is open (Deposit All was the only option before). Also added per item SFX feedback when depositing/withdrawing (same used for banks).
@@ -56,10 +58,11 @@ If migrating from this mod, just replace the module & addon with mine. It still 
     </td>
   </tr>
 </table>
+</details>
 
 ## Features
 - **Auto-deposit**: Profession materials are automatically vaulted when picked up
-- <kbd>**NEW**</kbd> **Crafting integration**: Seamlessly integrates vaulted materials when crafting, both the material counts and craftable recipe amounts take into account all vault stored materials, tested on default Blizzard interface and elvUI. Example screenshots below
+- <kbd>**NEW**</kbd> **Crafting integration**: Seamlessly integrates vaulted materials when crafting - material counts and craftable recipe amounts take all vault stored materials into account, tested on default Blizzard interface and elvUI. Most recipes craft directly from the vault without pulling materials to your bags first. Example screenshots below
 - <kbd>**NEW**</kbd> **Vault-aware filtering**: The "Have Materials" checkbox filters craftable recipes based on total material counts in bags and abyssal storage plus
 - <kbd>**NEW**</kbd> **Quest integration**: Accepting a quest that requires materials will auto pull the full or partial amount of materials from your vault if they exist. Any looted materials that are required for active-quests are excluded from auto-deposit up to the required amount.
 - <kbd>**UPDATE**</kbd> **Vault Interface Addon**: A choice between modern or classic UI for displaying vaulted materials (images below). Includes fuzzy search and materials grouped by profession category (modern) or material type (classic)
@@ -69,6 +72,7 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 - <kbd>**NEW**</kbd> **Dynamic Tooltip**: When hovering over a material in the vault, tooltip will dynamically show only if you own more of that item in your bags and how many you own.
 - <kbd>**NEW**</kbd> **Auto-Vault Options**: Addon options menu to Enable/Disable auto-vaulting materials based on obtain method -  (Loot/Craft/Mail/VendorBuy/QuestReward).
 - <kbd>**NEW**</kbd> **Auto-Vault Visibility**: Based on the Enabled options set above, you will get notified by a system message in chat whenever a material is vaulted. 
+- <kbd>**NEW**</kbd> **Roll wins stay in bags**: Greed/Need roll wins are never auto-vaulted, so you can trade, keep or disenchant them yourself.
   - Example Message: <img width="340" height="29" alt="Vaulted Material Notifcation" src="https://github.com/user-attachments/assets/ee2dd4ac-0cc3-44c3-abce-47c1879536cb" />
 
 
@@ -138,6 +142,14 @@ AbyssalStoragePlus.Enable = 1
 
 ## Changelog
 
+### 2026-11-13
+- Fixed deposit/withdraw playing two item sounds at once. Deposit now plays the item's own material "place" cue exactly once by briefly moving the item within its real bag slot, instead of faking a cursor pickup. Withdraw keeps its single "pickup" cue.
+
+### 2026-11-11
+- Rewrote crafting so most recipes (Create/Create All) craft directly from the vault instead of pulling materials into bags first. Materials are only depleted from the vault when a craft actually completes, so cancelling or failing a craft costs nothing.
+- Enchant/Socket item recipes keep the hover-pull behaviour so a single click works.
+- Greed/Need roll wins are never auto-vaulted - a roll win always stays in your bags, with no "vaulted" message.
+
 ### 2026-11-10
 - Added an addon options menu to enable/disable auto-vaulting materials based on acquisition method - (Loot/Craft/Mail/VendorBuy/QuestReward).
 - Improved upon addon system messaging to handle all acquisition methods isntead of only looted materials.
@@ -155,6 +167,9 @@ AbyssalStoragePlus.Enable = 1
 - Added safeguards against vault desync: deposits and withdrawals record exactly what moved and undo the transfer if it fails.
 - Full vault syncs now clear stale entries reliably, and `/asp craft` rejects recipes the character hasn't learned.
 
+<details>
+<Summary> Click to see older commits</summary>
+
 ### 2026-11-06
 - Fix regressions for "Create" and "Create All" logic that got overwritten with a recent commit to improve handling for recipes that require a target e.g. enchanting
 
@@ -163,9 +178,6 @@ AbyssalStoragePlus.Enable = 1
 - Refactored right-click bag deposit to use `hooksecurefunc`, fixing the `Interface action failed because of an AddOn` error that blocked using on-use items (food, scrolls, essences, etc.).
 - Replaced the broken quest turn-in auto-pull with a reliable quest-accept auto-unvault.
 - Added a chat warning when a required material can't be pulled because of low bag space.
-
-<details>
-<Summary> Click to see older commits</summary>
 
 ### 2026-11-04
 - Quest items are now better protected during Deposit All.

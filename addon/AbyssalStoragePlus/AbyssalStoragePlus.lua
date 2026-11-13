@@ -89,18 +89,63 @@ function AbyssalStoragePlus:GetItemCount(entry)
     return self.items[entry] or 0
 end
 
--- cursor trick reuses native item sounds; skips if busy
-function AbyssalStoragePlus:PlayItemSound(entry, bag, slot)
+-- First unlocked bag slot holding this item
+local function FindBagSlot(entry)
+    for bag = 0, NUM_BAG_SLOTS do
+        for slot = 1, GetContainerNumSlots(bag) do
+            local link = GetContainerItemLink(bag, slot)
+            if link and AbyssalStoragePlus:EntryFromLink(link) == entry then
+                local _, _, locked = GetContainerItemInfo(bag, slot)
+                if not locked then return bag, slot end
+            end
+        end
+    end
+    return nil
+end
+
+-- True when this exact bag slot holds the item and is free
+local function SlotHasItem(bag, slot, entry)
+    local link = GetContainerItemLink(bag, slot)
+    if not link or AbyssalStoragePlus:EntryFromLink(link) ~= entry then return false end
+    local _, _, locked = GetContainerItemInfo(bag, slot)
+    return not locked
+end
+
+-- One cue per action: place for deposits, pick-up for withdrawals
+function AbyssalStoragePlus:PlayItemSound(entry, pick, bag, slot)
+    if not entry or not GetItemInfo(entry) then return end
     if GetCursorInfo() then return end
 
-    if bag and slot then
-        PickupContainerItem(bag, slot)
-    else
-        if not GetItemInfo(entry) then return end
-        PickupItem(entry)
+    local sfx = GetCVar("Sound_EnableSFX")
+
+    -- A real slot makes the engine play the true material place cue
+    if not pick then
+        if not (bag and slot and SlotHasItem(bag, slot, entry)) then
+            bag, slot = FindBagSlot(entry)
+        end
+
+        if bag and slot then
+            SetCVar("Sound_EnableSFX", "0")
+            PickupContainerItem(bag, slot) -- mute the pick-up half
+            SetCVar("Sound_EnableSFX", sfx)
+            PickupContainerItem(bag, slot) -- real put-down cue plays here
+            return
+        end
     end
 
-    ClearCursor()
+    -- Items not in bags fall back to one phantom cue
+    if pick then
+        PickupItem(entry) -- real pick-up cue plays here
+        SetCVar("Sound_EnableSFX", "0")
+        ClearCursor() -- mute the generic put-down half
+    else
+        SetCVar("Sound_EnableSFX", "0")
+        PickupItem(entry) -- mute the pick-up half
+        SetCVar("Sound_EnableSFX", sfx)
+        ClearCursor() -- generic put-down cue plays here
+    end
+
+    SetCVar("Sound_EnableSFX", sfx)
 end
 
 -- ============================================================================
@@ -112,7 +157,7 @@ function AbyssalStoragePlus:SendCommand(cmd)
 end
 
 function AbyssalStoragePlus:Withdraw(entry, count)
-    self:PlayItemSound(entry)
+    self:PlayItemSound(entry, true)
     self:SendCommand("asp withdraw " .. entry .. " " .. (count or 0))
 end
 
@@ -122,7 +167,7 @@ function AbyssalStoragePlus:Deposit()
 end
 
 function AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
-    self:PlayItemSound(entry, bag, slot)
+    self:PlayItemSound(entry, false, bag, slot)
     local cmd = "asp deposit " .. entry .. " " .. (count or 0)
     if bag and slot then
         cmd = cmd .. " " .. bag .. " " .. slot
@@ -310,7 +355,7 @@ function AbyssalStoragePlus:HandleVaultNotification(payload)
     if not link then return end
 
     local count = tonumber(payload:match(",(%d+)")) or 1
-    self:PlayItemSound(entry)
+    self:PlayItemSound(entry, false)
 
     local text = VaultIconString(DEFAULT_CHAT_FRAME) .. " " .. VAULT_LABEL .. " " .. link
     if count > 1 then
