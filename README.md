@@ -70,9 +70,10 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 - <kbd>**NEW**</kbd> **Tools protected**: Profession tools and other outliers in the profession category are excluded from Deposit All (runed rods, Gnomish Army Knife, Jeweler's Kit etc.)
 - <kbd>**NEW**</kbd> **Vault Shortcuts**: `Shift + B` or click minimap icon to open bags + vault **/** `Ctrl + B` or right-click minimap icon to deposit all materials.
 - <kbd>**NEW**</kbd> **Dynamic Tooltip**: When hovering over a material in the vault, tooltip will dynamically show only if you own more of that item in your bags and how many you own.
+- <kbd>**NEW**</kbd> **Roll wins stay in bags**: Greed/Need roll wins are never auto-vaulted, so you can trade, keep or disenchant them yourself.
+- <kbd>**NEW**</kbd> Hovering material in vault or bags while the vault is open shows what each click does (can be turned off in the options).
 - <kbd>**NEW**</kbd> **Auto-Vault Options**: Addon options menu to Enable/Disable auto-vaulting materials based on obtain method -  (Loot/Craft/Mail/VendorBuy/QuestReward).
 - <kbd>**NEW**</kbd> **Auto-Vault Visibility**: Based on the Enabled options set above, you will get notified by a system message in chat whenever a material is vaulted. 
-- <kbd>**NEW**</kbd> **Roll wins stay in bags**: Greed/Need roll wins are never auto-vaulted, so you can trade, keep or disenchant them yourself.
   - Example Message: <img width="340" height="29" alt="Vaulted Material Notifcation" src="https://github.com/user-attachments/assets/ee2dd4ac-0cc3-44c3-abce-47c1879536cb" />
 
 
@@ -85,14 +86,16 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 ## Depositing Materials
 - Items should automatically get deposited on pickup
 - Click "Deposit All" in the abyssal storage interface
-- <kbd>**NEW**</kbd> Right-click a material in your bags while the vault is open
-- <kbd>**NEW**</kbd> Right-click the addon's minimap icon to Deposit All
-- <kbd>**NEW**</kbd> Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**
+- <kbd>**NEW**</kbd> Left-click a material in your bags while the vault is open to deposit that stack
+- <kbd>**NEW**</kbd> Right-click a material in your bags while the vault is open to deposit all stacks of that material. 
+- Right-click the addon's minimap icon to deposit all materials
+- Deposit All is available under **Key Bindings > AddOns > Abyssal Storage Plus**
    - New installs default to `Ctrl-B` if that key is unbound
 
 ## Withdrawing Materials
-- Right-click a stored material in the vault to withdraw the full stored amount
-- Shift-left-click a stored material to withdraw a specific amount
+- <kbd>**NEW**</kbd> Left-click a stored material in the vault to withdraw one stack of that material
+- Right-click a stored material in the vault to withdraw all of that material
+- Shift+Left-Click a stored material to withdraw a specific amount
 
 ## Abyssal Storage Plus Interface
 
@@ -125,6 +128,11 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 | `/asp deposit <itemId> [count]` | Deposit one material type |
 | `/asp withdraw <itemId> [count]` | Withdraw items (omit count for all) |
 | `/asp sync` | Force re-sync from server |
+| `/asp help` | List all commands in chat |
+
+## Known Issues
+- **Right-clicking a material with a Right-Click `Use` option with the storage UI open, uses the material once and then deposits the rest.** Bag clicks are handled with a secure post-hook, which runs *after* Blizzard's own click, so the addon cannot cancel the use. For example, with the vault open, right-clicking a stack of `Eternal Fire` deposits every stack except one, and that last one gets used and turns into `Crystallized Fire`. Attempts to get around this causes taints on all on-use items. Only materials with an on-use effect are affected; ordinary trade goods and gems deposit exactly as expected.
+- **Item Retrieving Information** - If you delete your game cache, items may show a red question mark with `Retrieving Item Information` in the tooltip. This is a general client-limitation. Items need to be re-queried since you haven't seen them and cached them yet. Hovering over each item should query the server and update the items icon/description the next time you reopen the interface.
 
 ## Configuration
 In `mod_abyssal_storage_plus.conf`:
@@ -144,11 +152,21 @@ AbyssalStoragePlus.Enable = 1
 
 ### 2026-11-13
 - Fixed deposit/withdraw playing two item sounds at once. Deposit now plays the item's own material "place" cue exactly once by briefly moving the item within its real bag slot, instead of faking a cursor pickup. Withdraw keeps its single "pickup" cue.
+- Left-click a stored material in the vault withdraws one full stack (or a single item for non-stackables). 
+- Left-click a material in bags to deposit one full stack (or a single item for non-stackables).
+- Deposit single-stack moved from right-click to left-click so it no longer fights materials that have a right-click `use` effect, like food. 
+- Right-clicking a material in your bags while the vault is open now deposits all stacks of that material.
+- Added additional help tooltips when hovering over materials while vault interface is open.
+- Add a new "Show help tooltips" option to toggle on/off all help tooltips.
+- added `/asp help` command that lists all possible commands for Abyssal Storage in chat. 
+- Audible feedback added to abyssal storage interface open and close - Uses guild bank open/close sound effect.
+
+### 2026-11-12
+- Loot won from Greed/Need rolls are never auto-vaulted - a won item always stays in your bags, with no "vaulted" message.
 
 ### 2026-11-11
 - Rewrote crafting so most recipes (Create/Create All) craft directly from the vault instead of pulling materials into bags first. Materials are only depleted from the vault when a craft actually completes, so cancelling or failing a craft costs nothing.
 - Enchant/Socket item recipes keep the hover-pull behaviour so a single click works.
-- Greed/Need roll wins are never auto-vaulted - a roll win always stays in your bags, with no "vaulted" message.
 
 ### 2026-11-10
 - Added an addon options menu to enable/disable auto-vaulting materials based on acquisition method - (Loot/Craft/Mail/VendorBuy/QuestReward).

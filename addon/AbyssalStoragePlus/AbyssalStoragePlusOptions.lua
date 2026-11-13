@@ -9,6 +9,7 @@ local SETTING_ROWS = {
     { key = "quest",  label = "Auto-vault materials on Quest Reward",           default = false },
     { key = "vendor", label = "Auto-vault materials on Vendor Buys",            default = false },
     { key = "accept", label = "Auto-withdraw quest materials on Quest Accept",  default = true },
+    { key = "tooltips", label = "Show help tooltips",                            default = true, clientOnly = true },
 }
 
 local function GetSettings()
@@ -25,7 +26,9 @@ local function SendSettings()
     local settings = GetSettings()
     local values = {}
     for _, row in ipairs(SETTING_ROWS) do
-        values[#values + 1] = settings[row.key] and 1 or 0
+        if not row.clientOnly then
+            values[#values + 1] = settings[row.key] and 1 or 0
+        end
     end
     AbyssalStoragePlus:SendCommand("asp settings " .. table.concat(values, " "))
 end

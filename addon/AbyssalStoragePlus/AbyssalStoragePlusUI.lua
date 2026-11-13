@@ -40,6 +40,16 @@ end
 AbyssalStoragePlusDB = AbyssalStoragePlusDB or {}
 AbyssalStoragePlusDB.viewMode = AbyssalStoragePlusDB.viewMode or VIEW_MODE_BANK
 
+-- Help tooltips can be turned off in the options panel
+AbyssalStoragePlusDB.settings = AbyssalStoragePlusDB.settings or {}
+if AbyssalStoragePlusDB.settings.tooltips == nil then
+    AbyssalStoragePlusDB.settings.tooltips = true
+end
+
+local function HelpTooltipsEnabled()
+    return AbyssalStoragePlusDB.settings.tooltips ~= false
+end
+
 -- ============================================================================
 -- Sorted/Filtered Item List
 -- ============================================================================
@@ -455,8 +465,11 @@ local function CreateItemCell(parent, name)
             if bags > 0 then
                 GameTooltip:AddDoubleLine("Bags", tostring(bags), 0.78, 0.82, 0.88, 1, 1, 1)
             end
-            GameTooltip:AddLine("Right-click: Withdraw all", 0.8, 0.8, 0.8)
-            GameTooltip:AddLine("Shift-left-click: Withdraw amount", 0.8, 0.8, 0.8)
+            if HelpTooltipsEnabled() then
+                GameTooltip:AddLine("Left-Click: Withdraw One Stack", 0.8, 0.8, 0.8)
+                GameTooltip:AddLine("Shift+Left-Click: Withdraw Amount", 0.8, 0.8, 0.8)
+                GameTooltip:AddLine("Right-Click: Withdraw All", 0.8, 0.8, 0.8)
+            end
             GameTooltip:Show()
         end
     end)
@@ -464,7 +477,7 @@ local function CreateItemCell(parent, name)
         GameTooltip:Hide()
     end)
 
-    -- Right-click withdraws all; shift-left-click picks amount
+    -- Left-click withdraws one stack; shift-left-click picks amount
     cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     cell:SetScript("OnClick", function(self, button)
         if not self.itemEntry or not self.itemCount then
@@ -477,6 +490,9 @@ local function CreateItemCell(parent, name)
             else
                 AbyssalStoragePlus:Withdraw(self.itemEntry, 1)
             end
+        elseif button == "LeftButton" then
+            local maxStack = select(8, GetItemInfo(self.itemEntry)) or 1
+            AbyssalStoragePlus:Withdraw(self.itemEntry, math.min(maxStack, self.itemCount))
         elseif button == "RightButton" then
             AbyssalStoragePlus:Withdraw(self.itemEntry, self.itemCount)
         end
@@ -1155,28 +1171,109 @@ hookFrame:SetScript("OnEvent", function(self, event)
     end
 end)
 
--- ============================================================================
--- Right-click bag items to deposit
--- ============================================================================
+-- Only act on bag slots while the vault window is open
+local function BagClicksOwned()
+    return AbyssalStoragePlusFrame and AbyssalStoragePlusFrame:IsShown()
+end
 
--- Hook securely; replacing this global taints the protected on-use path of UseContainerItem
+-- Entry and count when this bag slot holds a depositable material
+local function BagItemDepositInfo(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return nil end
+
+    local entry = AbyssalStoragePlus:EntryFromLink(link)
+    if not entry then return nil end
+
+    local _, count, locked = GetContainerItemInfo(bag, slot)
+    if locked then return nil end
+
+    -- An uncached item type is let through; the server is the real judge
+    local itemType = select(6, GetItemInfo(link))
+    if itemType and itemType ~= "Trade Goods" and itemType ~= "Gem" then
+        return nil
+    end
+
+    return entry, count or 1
+end
+
+-- Another container UI means Blizzard must own the click entirely
+local function OtherContainerOpen()
+    return (MerchantFrame and MerchantFrame:IsShown())
+        or (TradeFrame and TradeFrame:IsShown())
+        or (MailFrame and MailFrame:IsShown())
+        or (BankFrame and BankFrame:IsShown())
+end
+
+-- True when the item class is a vault material; uncached classes are let through
+local function IsVaultMaterialClass(itemClass)
+    return not itemClass or itemClass == "Trade Goods" or itemClass == "Gem"
+end
+
+-- Hook securely: replacing this global itself taints the protected on-use path
+-- of UseContainerItem, which blocks every "Use:" item until /reload.
 if ContainerFrameItemButton_OnClick then
     hooksecurefunc("ContainerFrameItemButton_OnClick", function(self, button)
-        if button ~= "RightButton" or not AbyssalStoragePlusFrame:IsShown() then
-            return
-        end
+        if not BagClicksOwned() or OtherContainerOpen() then return end
 
-        -- Let the default handler own the click when another container UI is open
-        if (MerchantFrame and MerchantFrame:IsShown())
-            or (TradeFrame and TradeFrame:IsShown())
-            or (MailFrame and MailFrame:IsShown())
-            or (BankFrame and BankFrame:IsShown()) then
-            return
-        end
-
-        local bag = self:GetParent():GetID()
+        local parent = self:GetParent()
+        local bag = parent and parent:GetID()
         local slot = self:GetID()
-        if not bag or bag < 0 or bag > NUM_BAG_SLOTS then
+        if not bag or bag < 0 or bag > NUM_BAG_SLOTS then return end
+
+        if button == "RightButton" then
+            -- Blizzard already tried to use it; depositing all stacks is ours
+            if CursorHasItem() then return end
+            local entry = BagItemDepositInfo(bag, slot)
+            if entry then AbyssalStoragePlus:DepositItem(entry, 0) end
+            return
+        end
+
+        -- Left click: Blizzard already picked the stack up, so undo that
+        if IsMouseButtonDown("LeftButton") then return end -- a drag, not a click
+
+        local cursorType, cursorData, cursorLink = GetCursorInfo()
+        if cursorType ~= "item" then return end
+
+        local entry = cursorLink and AbyssalStoragePlus:EntryFromLink(cursorLink) or nil
+        if not entry and type(cursorData) == "number" then entry = cursorData end
+        if not entry then return end
+
+        -- A different item already sitting in the slot means a drop or swap
+        local slotLink = GetContainerItemLink(bag, slot)
+        if slotLink and AbyssalStoragePlus:EntryFromLink(slotLink) ~= entry then return end
+
+        local _, _, _, _, _, itemClass = GetItemInfo(entry)
+        if not IsVaultMaterialClass(itemClass) then return end -- keep stock pickup
+
+        -- Put the stack back, silently, so the deposit plays one clean cue
+        local sfx = GetCVar("Sound_EnableSFX")
+        SetCVar("Sound_EnableSFX", "0")
+        PickupContainerItem(bag, slot)
+        SetCVar("Sound_EnableSFX", sfx)
+
+        local _, count = GetContainerItemInfo(bag, slot)
+        if not count then return end
+        AbyssalStoragePlus:DepositItem(entry, count, bag, slot) -- one stack
+    end)
+end
+
+if AbyssalStoragePlusFrame then
+    AbyssalStoragePlusFrame:HookScript("OnHide", function()
+        PlaySound("GuildVaultClose")
+    end)
+end
+
+-- Show the deposit hints on bag materials while the vault is open
+if ContainerFrameItemButton_OnEnter then
+    hooksecurefunc("ContainerFrameItemButton_OnEnter", function(self)
+        if not AbyssalStoragePlusFrame:IsShown() or not HelpTooltipsEnabled() then
+            return
+        end
+
+        local parent = self:GetParent()
+        local bag = parent and parent:GetID()
+        local slot = self:GetID()
+        if bag == KEYRING_CONTAINER or not bag or bag < 0 or bag > NUM_BAG_SLOTS then
             return
         end
 
@@ -1186,11 +1283,9 @@ if ContainerFrameItemButton_OnClick then
             return
         end
 
-        local _, count, locked = GetContainerItemInfo(bag, slot)
-        local entry = link and AbyssalStoragePlus:EntryFromLink(link)
-        if entry and count and count > 0 and not locked then
-            AbyssalStoragePlus:DepositItem(entry, count, bag, slot)
-        end
+        GameTooltip:AddLine("Left-Click: Deposit Stack", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Right-Click: Deposit All", 0.8, 0.8, 0.8)
+        GameTooltip:Show()
     end)
 end
 
@@ -2031,6 +2126,7 @@ end
 -- ============================================================================
 
 AbyssalStoragePlusFrame:SetScript("OnShow", function(self)
+    AbyssalStoragePlus.PlayVaultOpenSound()
     ApplyViewMode()
     -- Slight delay to let item info queries return
     AbyssalStoragePlus.SetTimer(0.5, function()
@@ -2111,8 +2207,8 @@ end)
 minimapButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:AddLine("Abyssal Storage Plus")
-    GameTooltip:AddLine("Left-click: Open", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("Right-click: Deposit All", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Left-Click: Open", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Right-Click: Deposit All", 0.8, 0.8, 0.8)
     GameTooltip:AddLine("Drag: Move", 0.8, 0.8, 0.8)
     GameTooltip:Show()
 end)

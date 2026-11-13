@@ -65,6 +65,15 @@ function AbyssalStoragePlus.SetTimer(delay, callback)
     timerFrame:Show()
 end
 
+-- One open cue per open, however the window was opened
+local lastOpenCue = 0
+
+function AbyssalStoragePlus.PlayVaultOpenSound()
+    if GetTime() - lastOpenCue < 0.6 then return end
+    lastOpenCue = GetTime()
+    PlaySound("GuildVaultOpen")
+end
+
 -- Coalesce bursty server updates into a single UI rebuild
 function AbyssalStoragePlus:RequestUIUpdate()
     if not self.UpdateUI then return end
@@ -478,6 +487,18 @@ end)
 
 SLASH_ABYSSAL1 = "/asp"
 SLASH_ABYSSAL2 = "/abyssal"
+
+-- Print the command list, used by /asp help and by any unknown subcommand
+local function PrintSlashHelp()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffAbyssal Storage Plus Commands:|r")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp - Toggle storage window")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp deposit - Deposit all trade goods")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp deposit <itemId> [count] - Deposit one material type")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp withdraw <itemId> [count] - Withdraw items")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp sync - Re-sync from server")
+    DEFAULT_CHAT_FRAME:AddMessage("  /asp help - Show this help")
+end
+
 SlashCmdList["ABYSSAL"] = function(msg)
     if msg == "" or msg == "show" then
         if AbyssalStoragePlusFrame then
@@ -487,6 +508,8 @@ SlashCmdList["ABYSSAL"] = function(msg)
                 AbyssalStoragePlusFrame:Show()
             end
         end
+    elseif msg == "help" or msg == "?" then
+        PrintSlashHelp()
     elseif msg == "deposit" then
         AbyssalStoragePlus:Deposit()
     elseif msg == "sync" then
@@ -505,15 +528,10 @@ SlashCmdList["ABYSSAL"] = function(msg)
             if entry then
                 AbyssalStoragePlus:Withdraw(tonumber(entry), tonumber(count) or 0)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Usage: /asp withdraw <itemEntry> [count]|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444Usage: /asp withdraw <itemId> [count]|r")
             end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffAbyssal Storage Plus Commands:|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  /asp - Toggle storage window")
-            DEFAULT_CHAT_FRAME:AddMessage("  /asp deposit - Deposit all trade goods")
-            DEFAULT_CHAT_FRAME:AddMessage("  Right-click bag materials - Deposit that stack")
-            DEFAULT_CHAT_FRAME:AddMessage("  /asp sync - Re-sync from server")
-            DEFAULT_CHAT_FRAME:AddMessage("  /asp withdraw <id> [count] - Withdraw items")
+            PrintSlashHelp()
         end
     end
 end
