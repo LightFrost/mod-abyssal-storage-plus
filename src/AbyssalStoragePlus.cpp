@@ -2,6 +2,7 @@
 #include "AccountMgr.h"
 #include "DatabaseEnv.h"
 #include "ItemTemplate.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
@@ -308,6 +309,21 @@ static void SendOnePacket(Player* player, std::string const& msg)
     player->GetSession()->SendPacket(&data);
 }
 
+// A vault entry the player has never held shows as "?" because the client's own
+// item query is not answered on this server, so it never learns the item. Play
+// the core's own item-query handler back for the entry: that sends the client a
+// real SMSG_ITEM_QUERY_SINGLE_RESPONSE, which is what caches it.
+static void WarmItemInfo(Player* player, uint32 itemEntry)
+{
+    if (!player || !itemEntry)
+        return;
+
+    WorldPacket query;
+    query.Initialize(CMSG_ITEM_QUERY_SINGLE, 4);
+    query << uint32(itemEntry);
+    player->GetSession()->HandleItemQuerySingleOpcode(query);
+}
+
 void AbyssalStoragePlusMgr::SendAddonMessage(Player* player, std::string const& message)
 {
     // Prefix with "ABYS\t" so client receives arg1="ABYS", arg2=message
@@ -391,6 +407,12 @@ void AbyssalStoragePlusMgr::SendFullSync(Player* player)
     }
 
     SendAddonMessage(player, "SYNCE");
+
+    // Push the item record for every vault entry so the client can draw the vault
+    // straight away, instead of leaving entries it has never held as "?".
+    if (items)
+        for (auto const& pair : *items)
+            WarmItemInfo(player, pair.first);
 }
 
 void AbyssalStoragePlusMgr::SendItemUpdate(Player* player, uint32 itemEntry, uint32 count)
