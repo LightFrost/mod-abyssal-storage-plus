@@ -132,6 +132,7 @@ If migrating from this mod, just replace the module & addon with mine. It still 
 | `/asp help` | List all commands in chat |
 
 ## Known Issues
+**IF you come across any other issues, please [Create a new Issue](https://github.com/LightFrost/mod-abyssal-storage-plus/issues/new) and try to add as much detail as you can**
 
  - **Freezing/Crashing with a unbuilt cache** -  when you have an unbuilt cache (e.g. deleting client cache folder/or fresh client install), opening any profession crafting UI would cause a game crash or major freeze. 
 **2026-11-15** A fix has been added, the cache now rebuilds in the background, but you have to wait at least 20 seconds before opening a crafting interface. 
@@ -164,6 +165,8 @@ AbyssalStoragePlus.Enable = 1
 ### 2026-11-15
 - Fix for crashing/freezing when opening a profession crafting interface with a fresh `itemcache.wdb` - See Known issues
 - Fix craft counter resetting to 1 after the first craft on queuing multiple crafts. Now correctly decrements by 1 on each successive craft.
+- Materials used mostly by one profession are now filed under that profession instead of `Other` (e.g. Bleach, the dyes and the alchemy vials). Items genuinely shared across several professions stay in `Other`.
+- Ink items (Ink of the Sea, Midnight Ink, Snowfall Ink, ...) now appear under `Inscription` instead of `Engineering`, which they inherited from their item subtype.
 
 ### 2026-11-14
 - Added item query handling to cache all stored vault materials instantly, fixing "retrieving item information" and [?] icons for  uncached vault entries.
